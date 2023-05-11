@@ -1,0 +1,11 @@
+{
+  "display_name": "morpho 0.5.7 (xmorpho)",
+  "argv": [
+      "@XEUS_MORPHO_KERNELSPEC_PATH@xmorpho",
+      "-f",
+      "{connection_file}"
+  ],
+  "language": "morpho",
+  "metadata": {"debugger": false
+  }
+}

@@ -1,0 +1,8 @@
+name: xeus-morpho
+channels:
+  - conda-forge
+dependencies:
+  - xeus-morpho=0.1.0
+  - notebook
+  - ipywidgets>=7.6
+  - jupyterlab=3
