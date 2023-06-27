@@ -96,6 +96,17 @@ namespace xeus_morpho
                 nl::json pub_data;
                 pub_data["text/plain"] = output;
 
+                //pub_data["text/markdown"] = "# Header 1\n## Header 2\n This is markdown, including _formatting_.\n";
+                /*pub_data["text/html"] = "<canvas id=\"myCanvas\" width=\"200\" height=\"100\" style=\"border:1px solid #000000;\">"
+                "</canvas>"
+                "<script>"
+                "var c = document.getElementById(\"myCanvas\");"
+                "var ctx = c.getContext(\"2d\");"
+                "ctx.beginPath();"
+                "ctx.arc(95, 50, 40, 0, 2 * Math.PI);"
+                "ctx.stroke();"
+                "</script>";*/
+
                 publish_execution_result(execution_counter, std::move(pub_data), nl::json::object());
             } else {
                 err=*morpho_geterror(morpho_vm);
