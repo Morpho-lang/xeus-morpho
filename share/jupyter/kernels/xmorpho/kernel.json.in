@@ -1,5 +1,5 @@
 {
-  "display_name": "morpho 0.5.7 (xmorpho)",
+  "display_name": "morpho 0.6.0 (xmorpho)",
   "argv": [
       "@XEUS_MORPHO_KERNELSPEC_PATH@xmorpho",
       "-f",
