@@ -1,2 +1,3 @@
-
+build/*
 src/.vscode/settings.json
+.DS_Store
