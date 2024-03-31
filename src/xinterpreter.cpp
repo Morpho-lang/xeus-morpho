@@ -223,6 +223,7 @@ namespace xeus_morpho
         const std::string  implementation_version = XEUS_MORPHO_VERSION;
         const std::string  language_name = "morpho";
         const std::string  language_version = "0.5.7";
+        const std::string  language_version = "0.6.0";
         const std::string  language_mimetype = "text/x-morpho";;
         const std::string  language_file_extension = "morpho";;
         const std::string  language_pygments_lexer = "";
