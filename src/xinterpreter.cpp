@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <sstream>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -35,11 +36,11 @@ namespace xeus_morpho
         thisinterpreter->print(std::string(str));
     }
 
-    extern "C" void xeus_morphowarningfn (vm* v, void *ref, error *warning) {
+    extern "C" void xeus_morphowarningfn (vm* /*v */, void* /*ref*/, error* /*warning */) {
 
     }
 
-    extern "C" void xeus_morphodebuggerfn (vm *v, void *ref, char *str) {
+    extern "C" void xeus_morphodebuggerfn (vm* /*v*/, void* /*ref*/, char* /*str */) {
 
     }
  
@@ -78,10 +79,10 @@ namespace xeus_morpho
     }
 
     void interpreter::execute_request_impl(send_reply_callback cb,
-                                               int execution_count,
-                                               const std::string& code,
-                                               xeus::execute_request_config config,
-                                               nl::json user_expressions)
+                                           int execution_count,
+                                           const std::string& code,
+                                           xeus::execute_request_config /*config*/,
+                                           nl::json /*user_expressions*/)
     {
         nl::json kernel_res;
 
@@ -112,25 +113,41 @@ namespace xeus_morpho
             } else {
                 err=*morpho_geterror(morpho_vm);
 
-                std::string id(err.id);
+                std::string id(err.id); // Extract the error id and message
                 std::string msg(err.msg);
 
-                /*publish_execution_error(id, msg, {
-                    "<traceback>",
-                    "<traceback>"
-                });*/
+                reset();
+                morpho_stacktrace(morpho_vm);
+                
+                // Convert stacktrace into string vector
+                std::vector<std::string> stacktrace({"Error [" + id + "]: " + msg});
+                std::istringstream iss(buffer);
+                std::string line;
+
+                while (std::getline(iss, line)) { // Split the output of morpho_stacktrace
+                    stacktrace.push_back(line);
+                }
                 
                 kernel_res["status"] = "error";
-                kernel_res["ename"] = "load file error";
-                kernel_res["evalue"] = id + "' : " + msg;
-                kernel_res["traceback"] = { id + "' : " + msg };
+                kernel_res["ename"] = id;
+                kernel_res["evalue"] = msg;
+                kernel_res["traceback"] = stacktrace;
+                
+                publish_execution_error(id, msg, stacktrace);
             }
         } else {
             std::string id(err.id);
             std::string msg(err.msg);
-
-            publish_stream("stderr", "Compilation error '" + id + "' : " + msg);
+            
+            kernel_res["status"] = "error";
+            kernel_res["ename"] = id;
+            kernel_res["evalue"] = msg;
+            
+            std::vector<std::string> stacktrace({"Compilation error [" + id + "]: " + msg});
+            
+            publish_execution_error(id, msg, stacktrace);
         }
+        
         cb(kernel_res);
     }
 
@@ -142,7 +159,7 @@ namespace xeus_morpho
         // you can for example initialize an engine here or redirect output.
     }
 
-    nl::json interpreter::is_complete_request_impl(const std::string& code)
+    nl::json interpreter::is_complete_request_impl(const std::string& /*code*/)
     {
         // Insert code here to validate the ``code``
         // and use `create_is_complete_reply` with the corresponding status
@@ -200,38 +217,16 @@ namespace xeus_morpho
 
     nl::json interpreter::kernel_info_request_impl()
     {
-
-        const std::string  protocol_version = "5.3";
-        const std::string  implementation = "xmorpho";
-        const std::string  implementation_version = XEUS_MORPHO_VERSION;
-        const std::string  language_name = "morpho";
-        const std::string  language_version = MORPHO_VERSIONSTRING;
-        const std::string  language_mimetype = "text/x-morpho";;
-        const std::string  language_file_extension = "morpho";;
-        const std::string  language_pygments_lexer = "";
-        const std::string  language_codemirror_mode = "";
-        const std::string  language_nbconvert_exporter = "";
-        const std::string  banner = "xmorpho";
-        const bool         debugger = false;
-        
-        const nl::json     help_links = nl::json::array();
-
-
-        return xeus::create_info_reply(
-            protocol_version,
-            implementation,
-            implementation_version,
-            language_name,
-            language_version,
-            language_mimetype,
-            language_file_extension,
-            language_pygments_lexer,
-            language_codemirror_mode,
-            language_nbconvert_exporter,
-            banner,
-            debugger,
-            help_links
-        );
+        nl::json result;
+        result["implementation"] = "xmorpho";
+        result["implementation_version"] = XEUS_MORPHO_VERSION;
+        result["banner"] = "xmorpho";
+        result["language_info"]["name"] = "morpho";
+        result["language_info"]["version"] = MORPHO_VERSIONSTRING;
+        result["language_info"]["mimetype"] = "text/x-morpho";
+        result["language_info"]["file_extension"] = "morpho";
+        result["status"] = "ok";
+        return result;
     }
 
 }
