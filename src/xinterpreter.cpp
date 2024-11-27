@@ -77,14 +77,19 @@ namespace xeus_morpho
         buffer += output;
     }
 
-    nl::json interpreter::execute_request_impl(int execution_counter, // Typically the cell number
-                                              const std::string & code, // Code to execute
-                                              bool /*silent*/,
-                                              bool /*store_history*/,
-                                              nl::json /*user_expressions*/,
-                                              bool /*allow_stdin*/)
+    void interpreter::execute_request_impl(send_reply_callback cb,
+                                               int execution_count,
+                                               const std::string& code,
+                                               xeus::execute_request_config config,
+                                               nl::json user_expressions)
     {
-        error err; // Error structure that received messages from the compiler and VM 
+        nl::json kernel_res;
+
+        kernel_res["payload"] = nl::json::array();
+        kernel_res["user_expressions"] = nl::json::object();
+        kernel_res["status"] = "ok";
+        
+        error err; // Error structure that received messages from the compiler and VM
         error_init(&err);
 
         // Compile code 
@@ -100,17 +105,25 @@ namespace xeus_morpho
                 nl::json pub_data;
                 pub_data["text/plain"] = buffer;
 
-                publish_execution_result(execution_counter, std::move(pub_data), nl::json::object());
+                publish_execution_result(execution_count, std::move(pub_data), nl::json::object());
+                
+                kernel_res["status"] = "ok";
+                kernel_res["user_expressions"] = nl::json::object();
             } else {
                 err=*morpho_geterror(morpho_vm);
 
                 std::string id(err.id);
                 std::string msg(err.msg);
 
-                publish_execution_error(id, msg, {
+                /*publish_execution_error(id, msg, {
                     "<traceback>",
                     "<traceback>"
-                });
+                });*/
+                
+                kernel_res["status"] = "error";
+                kernel_res["ename"] = "load file error";
+                kernel_res["evalue"] = id + "' : " + msg;
+                kernel_res["traceback"] = { id + "' : " + msg };
             }
         } else {
             std::string id(err.id);
@@ -118,33 +131,7 @@ namespace xeus_morpho
 
             publish_stream("stderr", "Compilation error '" + id + "' : " + msg);
         }
-
-        // Use this method for publishing the execution result to the client,
-        // this method takes the ``execution_counter`` as first argument,
-        // the data to publish (mime type data) as second argument and metadata
-        // as third argument.
-        // Replace "Hello World !!" by what you want to be displayed under the execution cell
-        //nl::json pub_data;
-        //pub_data["text/plain"] = "Reply";
-
-        // If silent is set to true, do not publish anything!
-        // Otherwise:
-        // Publish the execution result
-        //publish_execution_result(execution_counter, std::move(pub_data), nl::json::object());
-
-        // You can also use this method for publishing errors to the client, if the code
-        // failed to execute
-        // publish_execution_error(error_name, error_value, error_traceback);
-        // publish_execution_error("TypeError", "123", {"!@#$", "*(*"});
-
-        // Use publish_stream to publish a stream message or error:
-        //publish_stream("stdout", "I am publishing a message");
-        //publish_stream("stderr", "Error!");
-
-        // Use Helpers that create replies to the server to be returned
-        return xeus::create_successful_reply(/*payload, user_expressions*/);
-        // Or in case of error:
-        //return xeus::create_error_reply(evalue, ename, trace_back);
+        cb(kernel_res);
     }
 
     void interpreter::configure_impl()

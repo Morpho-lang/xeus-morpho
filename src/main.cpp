@@ -12,23 +12,25 @@
 #include <iostream>
 #include <string>
 #include <utility>
+#include <signal.h>
 
 #ifdef __GNUC__
 #include <stdio.h>
 #include <execinfo.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 #endif
 
+#include "xeus/xeus_context.hpp"
 #include "xeus/xkernel.hpp"
 #include "xeus/xkernel_configuration.hpp"
-#include "xeus-zmq/xserver_zmq.hpp"
+#include "xeus/xserver.hpp"
 
+#include "xeus-zmq/xserver_zmq_split.hpp"
+#include "xeus-zmq/xzmq_context.hpp"
 
 #include "xeus-morpho/xinterpreter.hpp"
 #include "xeus-morpho/xeus_morpho_config.hpp"
-
 
 #ifdef __GNUC__
 void handler(int sig)
@@ -44,6 +46,11 @@ void handler(int sig)
     exit(1);
 }
 #endif
+
+void stop_handler(int /*sig*/)
+{
+    exit(0);
+}
 
 bool should_print_version(int argc, char* argv[])
 {
@@ -100,29 +107,45 @@ int main(int argc, char* argv[])
 #ifdef __GNUC__
     std::clog << "registering handler for SIGSEGV" << std::endl;
     signal(SIGSEGV, handler);
+
+    // Registering SIGINT and SIGKILL handlers
+    signal(SIGKILL, stop_handler);
 #endif
+    signal(SIGINT, stop_handler);
 
-    auto context = xeus::make_context<zmq::context_t>();
-
+    std::unique_ptr<xeus::xcontext> context = xeus::make_zmq_context();
+    
     // Instantiating the xeus xinterpreter
     using interpreter_ptr = std::unique_ptr<xeus_morpho::interpreter>;
     interpreter_ptr interpreter = interpreter_ptr(new xeus_morpho::interpreter());
 
+    using history_manager_ptr = std::unique_ptr<xeus::xhistory_manager>;
+    history_manager_ptr hist = xeus::make_in_memory_history_manager();
 
     std::string connection_filename = extract_filename(argc, argv);
 
+    nl::json debugger_config;
+    
     if (!connection_filename.empty())
     {
-
         xeus::xconfiguration config = xeus::load_configuration(connection_filename);
         xeus::xkernel kernel(config,
                              xeus::get_user_name(),
                              std::move(context),
                              std::move(interpreter),
-                             xeus::make_xserver_zmq);
+                             xeus::make_xserver_shell_main,
+                             std::move(hist),
+                             xeus::make_console_logger(xeus::xlogger::msg_type,
+                                                       xeus::make_file_logger(xeus::xlogger::content, "xeus.log")),
+                             xeus::make_null_debugger,
+                             debugger_config);
+
 
         std::cout <<
-            "Starting xmorpho kernel...\n\n"
+            " ___   ___\n"
+            "( @ \\Y/ @ )   morpho  " MORPHO_VERSIONSTRING "\n"
+            " \\__+|+__/\n"
+            "  {_/ \\_}\n\n"
             "If you want to connect to this kernel from an other client, you can use"
             " the " + connection_filename + " file."
             << std::endl;
@@ -134,11 +157,18 @@ int main(int argc, char* argv[])
         xeus::xkernel kernel(xeus::get_user_name(),
                              std::move(context),
                              std::move(interpreter),
-                             xeus::make_xserver_zmq);
+                             xeus::make_xserver_shell_main,
+                             std::move(hist),
+                             nullptr,
+                             xeus::make_null_debugger,
+                             debugger_config);
 
         const auto& config = kernel.get_config();
         std::cout <<
-            "Starting xmorpho kernel...\n\n"
+            " ___   ___\n"
+            "( @ \\Y/ @ )  morpho " MORPHO_VERSIONSTRING "\n"
+            " \\__+|+__/\n"
+            "  {_/ \\_}\n\n"
             "If you want to connect to this kernel from an other client, just copy"
             " and paste the following content inside of a `kernel.json` file. And then run for example:\n\n"
             "# jupyter console --existing kernel.json\n\n"

@@ -4,25 +4,33 @@ To build xeus-morpho, we need:
 
 * Xtl
 
-    conda install xtl -c conda-forge
+    mamba install xtl
 
 * xeus
 
-    conda install -c conda-forge xeus
+    mamba install xeus
 
 * nlohmann_json
 
-    conda install -c conda-forge nlohmann_json
+    mamba install nlohmann_json
 
 * Xeus-Zmq
 
-    conda install -c conda-forge xeus-zmq
+    mamba install xeus-zmq
 
 * CppZmq
 
-    conda install -c conda-forge cppzmq
+    mamba install cppzmq
 
 * OpenSSL: 
 
     brew install openssl
     cmake . -DOPENSSL_ROOT_DIR=/usr/local/Cellar/openssl@3/3.1.0
+
+----
+Note that CMake can have trouble finding the CMake files from the above; may need to set CMAKE_PREFIX_PATH as follows:
+
+cmake -DCMAKE_PREFIX_PATH="/usr/local/Caskroom/miniforge/base/share/cmake;/usr/local/Caskroom/miniforge/base/lib/cmake" ..
+
+We also needed up-to-date jupyter, so used brew to install jupyterlab 
+
