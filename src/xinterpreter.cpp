@@ -27,6 +27,11 @@ namespace nl = nlohmann;
 
 namespace xeus_morpho
 {
+
+    extern "C" void xeus_printfn (vm *v, void *ref, char *str) {
+        interpreter *thisinterpreter = (interpreter *) ref;
+        thisinterpreter->print(std::string(str));
+    }
  
     interpreter::interpreter()
     {
@@ -35,6 +40,7 @@ namespace xeus_morpho
         morpho_compiler = morpho_newcompiler(morpho_program);
 
         morpho_vm = morpho_newvm();
+        morpho_setprintfn(morpho_vm, xeus_printfn, this);
 
         xeus::register_interpreter(this);
     }
@@ -48,12 +54,22 @@ namespace xeus_morpho
         morpho_finalize();
     }
 
+    void interpreter::reset()
+    {
+        buffer = "";
+    }
+
+    void interpreter::print(const std::string& output)
+    {
+        buffer = buffer + output;
+    }
+
     nl::json interpreter::execute_request_impl(int execution_counter, // Typically the cell number
-                                                      const  std::string & code, // Code to execute
-                                                      bool /*silent*/,
-                                                      bool /*store_history*/,
-                                                      nl::json /*user_expressions*/,
-                                                      bool /*allow_stdin*/)
+                                              const std::string & code, // Code to execute
+                                              bool /*silent*/,
+                                              bool /*store_history*/,
+                                              nl::json /*user_expressions*/,
+                                              bool /*allow_stdin*/)
     {
         error err; // Error structure that received messages from the compiler and VM 
         error_init(&err);
@@ -62,15 +78,16 @@ namespace xeus_morpho
         bool success=morpho_compile((char *) code.c_str(), morpho_compiler, false, &err);
         
         if (success) {
+            reset();
+            
             success=morpho_run(morpho_vm, morpho_program);
 
             // Now process the output 
             if (success) {
-                //std::string output(output_string);
-                //nl::json pub_data;
-                //pub_data["text/plain"] = output;
+                nl::json pub_data;
+                pub_data["text/plain"] = buffer;
 
-                //publish_execution_result(execution_counter, std::move(pub_data), nl::json::object());
+                publish_execution_result(execution_counter, std::move(pub_data), nl::json::object());
             } else {
                 err=*morpho_geterror(morpho_vm);
 
@@ -185,13 +202,14 @@ namespace xeus_morpho
         const std::string  implementation = "xmorpho";
         const std::string  implementation_version = XEUS_MORPHO_VERSION;
         const std::string  language_name = "morpho";
-        const std::string  language_version = "0.6.0";
+        const std::string  language_version = MORPHO_VERSIONSTRING;
         const std::string  language_mimetype = "text/x-morpho";;
         const std::string  language_file_extension = "morpho";;
         const std::string  language_pygments_lexer = "";
         const std::string  language_codemirror_mode = "";
         const std::string  language_nbconvert_exporter = "";
-        const std::string  banner = "xmorpho";const bool         debugger = false;
+        const std::string  banner = "xmorpho";
+        const bool         debugger = false;
         
         const nl::json     help_links = nl::json::array();
 

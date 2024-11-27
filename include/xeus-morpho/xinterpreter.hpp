@@ -26,6 +26,10 @@
 extern "C"
 {
     #include <morpho/morpho.h>
+
+    typedef void (*morphoprintfn) (vm *v, void *ref, char *str);
+
+    void morpho_setprintfn(vm *v, morphoprintfn printfn, void *ref);
 }
 
 namespace nl = nlohmann;
@@ -38,6 +42,7 @@ namespace xeus_morpho
 
         interpreter();
         virtual ~interpreter();
+        void print(const std::string& output);
 
     protected:
 
@@ -61,6 +66,8 @@ namespace xeus_morpho
         nl::json kernel_info_request_impl() override;
 
         void shutdown_request_impl() override;
+        
+        void reset();
 
     private: 
 
@@ -68,6 +75,7 @@ namespace xeus_morpho
         compiler *morpho_compiler;
         vm *morpho_vm; 
 
+        std::string buffer;
     };
 }
 
