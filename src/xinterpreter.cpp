@@ -62,52 +62,15 @@ namespace xeus_morpho
         bool success=morpho_compile((char *) code.c_str(), morpho_compiler, false, &err);
         
         if (success) {
-            // TODO: MUST REPLACE ALL THIS! 
-            // Save the original stdout file descriptor
-            int saved_stdout = dup(1);
-
-            int fd=open("./xmorpho.txt", O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR); 
-            dup2(fd, 1);
-
             success=morpho_run(morpho_vm, morpho_program);
-
-            // Restore the original stdout
-            dup2(saved_stdout, 1);
-            close(saved_stdout);
-
-
-            char output_string[2048] = ""; 
-            // Rewind the temporary file to the beginning
-            FILE *temp_file = fopen("./xmorpho.txt", "r");
-            // Read the contents of the temporary file into a string
-            if (temp_file) {
-                size_t length = fread(output_string, 1, sizeof(output_string) - 1, temp_file);
-                output_string[length] = '\0';
-                fclose(temp_file);
-            }
-
-            system("rm ./xmorpho.txt");
-
-            //fprintf(stderr, "Captured '%s'\n", output_string);
 
             // Now process the output 
             if (success) {
-                std::string output(output_string);
-                nl::json pub_data;
-                pub_data["text/plain"] = output;
+                //std::string output(output_string);
+                //nl::json pub_data;
+                //pub_data["text/plain"] = output;
 
-                //pub_data["text/markdown"] = "# Header 1\n## Header 2\n This is markdown, including _formatting_.\n";
-                /*pub_data["text/html"] = "<canvas id=\"myCanvas\" width=\"200\" height=\"100\" style=\"border:1px solid #000000;\">"
-                "</canvas>"
-                "<script>"
-                "var c = document.getElementById(\"myCanvas\");"
-                "var ctx = c.getContext(\"2d\");"
-                "ctx.beginPath();"
-                "ctx.arc(95, 50, 40, 0, 2 * Math.PI);"
-                "ctx.stroke();"
-                "</script>";*/
-
-                publish_execution_result(execution_counter, std::move(pub_data), nl::json::object());
+                //publish_execution_result(execution_counter, std::move(pub_data), nl::json::object());
             } else {
                 err=*morpho_geterror(morpho_vm);
 
