@@ -28,9 +28,19 @@ namespace nl = nlohmann;
 namespace xeus_morpho
 {
 
-    extern "C" void xeus_morphoprintfn (vm *v, void *ref, char *str) {
+    extern "C" void xeus_morphoprintfn (vm* /*v */,
+                                        void* ref,
+                                        char* str) {
         interpreter *thisinterpreter = (interpreter *) ref;
         thisinterpreter->print(std::string(str));
+    }
+
+    extern "C" void xeus_morphowarningfn (vm* v, void *ref, error *warning) {
+
+    }
+
+    extern "C" void xeus_morphodebuggerfn (vm *v, void *ref, char *str) {
+
     }
  
     interpreter::interpreter()
@@ -41,6 +51,7 @@ namespace xeus_morpho
 
         morpho_vm = morpho_newvm();
         morpho_setprintfn(morpho_vm, xeus_morphoprintfn, this);
+        morpho_setwarningfn(morpho_vm, xeus_morphowarningfn, this);
 
         xeus::register_interpreter(this);
         
@@ -96,7 +107,10 @@ namespace xeus_morpho
                 std::string id(err.id);
                 std::string msg(err.msg);
 
-                publish_stream("stderr", "Runtime error '" + id + "' : " + msg);
+                publish_execution_error(id, msg, {
+                    "<traceback>",
+                    "<traceback>"
+                });
             }
         } else {
             std::string id(err.id);

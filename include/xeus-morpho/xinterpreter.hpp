@@ -28,8 +28,12 @@ extern "C"
     #include <morpho/morpho.h>
 
     typedef void (*morphoprintfn) (vm *v, void *ref, char *str);
+    typedef void (*morphowarningfn) (vm *v, void *ref, error *warning);
+    typedef void (*morphodebuggerfn) (vm *v, void *ref);
 
+    void morpho_setwarningfn(vm *v, morphowarningfn warningfn, void *ref);
     void morpho_setprintfn(vm *v, morphoprintfn printfn, void *ref);
+    void morpho_setdebuggerfn(vm *v, morphodebuggerfn debuggerfn, void *ref);
 }
 
 namespace nl = nlohmann;
