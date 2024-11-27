@@ -28,7 +28,7 @@ namespace nl = nlohmann;
 namespace xeus_morpho
 {
 
-    extern "C" void xeus_printfn (vm *v, void *ref, char *str) {
+    extern "C" void xeus_morphoprintfn (vm *v, void *ref, char *str) {
         interpreter *thisinterpreter = (interpreter *) ref;
         thisinterpreter->print(std::string(str));
     }
@@ -40,9 +40,11 @@ namespace xeus_morpho
         morpho_compiler = morpho_newcompiler(morpho_program);
 
         morpho_vm = morpho_newvm();
-        morpho_setprintfn(morpho_vm, xeus_printfn, this);
+        morpho_setprintfn(morpho_vm, xeus_morphoprintfn, this);
 
         xeus::register_interpreter(this);
+        
+        buffer = "";
     }
 
     interpreter::~interpreter()
@@ -56,12 +58,12 @@ namespace xeus_morpho
 
     void interpreter::reset()
     {
-        buffer = "";
+        buffer.clear();
     }
 
     void interpreter::print(const std::string& output)
     {
-        buffer = buffer + output;
+        buffer += output;
     }
 
     nl::json interpreter::execute_request_impl(int execution_counter, // Typically the cell number
