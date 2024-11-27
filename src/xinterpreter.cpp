@@ -36,8 +36,10 @@ namespace xeus_morpho
         thisinterpreter->print(std::string(str));
     }
 
-    extern "C" void xeus_morphowarningfn (vm* /*v */, void* /*ref*/, error* /*warning */) {
-
+    extern "C" void xeus_morphowarningfn (vm* /*v */, void* ref, error* warning) {
+        interpreter *thisinterpreter = (interpreter *) ref;
+        
+        thisinterpreter->publish_stream("stderr", "Warning '" + std::string(warning->id) + "': " + std::string(warning->msg));
     }
 
     extern "C" void xeus_morphodebuggerfn (vm* /*v*/, void* /*ref*/, char* /*str */) {
@@ -120,7 +122,7 @@ namespace xeus_morpho
                 morpho_stacktrace(morpho_vm);
                 
                 // Convert stacktrace into string vector
-                std::vector<std::string> stacktrace({"Error [" + id + "]: " + msg});
+                std::vector<std::string> stacktrace({"Error '" + id + "': " + msg});
                 std::istringstream iss(buffer);
                 std::string line;
 
@@ -143,7 +145,7 @@ namespace xeus_morpho
             kernel_res["ename"] = id;
             kernel_res["evalue"] = msg;
             
-            std::vector<std::string> stacktrace({"Compilation error [" + id + "]: " + msg});
+            std::vector<std::string> stacktrace({"Compilation error '" + id + "': " + msg});
             
             publish_execution_error(id, msg, stacktrace);
         }
@@ -153,18 +155,13 @@ namespace xeus_morpho
 
     void interpreter::configure_impl()
     {
-        // `configure_impl` allows you to perform some operations
-        // after the custom_interpreter creation and before executing any request.
-        // This is optional, but can be useful;
-        // you can for example initialize an engine here or redirect output.
     }
 
     nl::json interpreter::is_complete_request_impl(const std::string& /*code*/)
     {
-        // Insert code here to validate the ``code``
-        // and use `create_is_complete_reply` with the corresponding status
-        // "unknown", "incomplete", "invalid", "complete"
-        return xeus::create_is_complete_reply("complete"/*status*/, "   "/*indent*/);
+        nl::json jresult;
+        jresult["status"] = "complete";
+        return jresult;
     }
 
     nl::json interpreter::complete_request_impl(const std::string&  code,
@@ -203,12 +200,12 @@ namespace xeus_morpho
                                                       int /*cursor_pos*/,
                                                       int /*detail_level*/)
     {
-        
-        return xeus::create_inspect_reply(true/*found*/, 
-            {{std::string("text/plain"), std::string("hello!")}}, /*data*/
-            {{std::string("text/plain"), std::string("hello!")}}  /*meta-data*/
-        );
-         
+        nl::json jresult;
+        jresult["status"] = "ok";
+        jresult["found"] = false;
+        jresult["data"] = nl::json::object();
+        jresult["metadata"] = nl::json::object();
+        return jresult;
     }
 
     void interpreter::shutdown_request_impl() {
