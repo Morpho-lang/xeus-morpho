@@ -5,7 +5,7 @@
 [![Documentation Status](http://readthedocs.org/projects/morpho-lang/badge/?version=latest)](https://morpho-langreadthedocs.io/en/latest/?badge=latest)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/softmattertheory/xeus-morpho/main?urlpath=/lab/tree/notebooks/xeus-morpho.ipynb)
 
-`xeus-morpho` is a Jupyter kernel for morpho based on the native implementation of the
+`xeus-morpho` is a Jupyter kernel for the [morpho language](https://github.com/Morpho-lang/morpho) based on the native implementation of the
 Jupyter protocol [xeus](https://github.com/jupyter-xeus/xeus).
 
 ## Installation
