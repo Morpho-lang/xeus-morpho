@@ -47,7 +47,7 @@ namespace xeus_morpho
     }
 
     // implemented in xcomplete.cpp
-    int complete(program *p, const std::string & start, int cursor_pos, nl::json & matches);
+    int complete(program *p, const std::string& code, int cursor_pos, nl::json& matches);
  
     interpreter::interpreter()
     {
@@ -172,7 +172,9 @@ namespace xeus_morpho
     {
         nl::json matches = nl::json::array();
 
-        int cursor_start = complete(morpho_program, code.c_str(), cursor_pos, matches);
+        std::cout << "COMPLETE_REQUEST";
+        
+        int cursor_start = complete(morpho_program, code, cursor_pos, matches);
         
         nl::json result;
         result["status"] = "ok";
