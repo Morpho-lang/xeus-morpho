@@ -1,7 +1,7 @@
 {
   "display_name": "morpho 0.6.1 (xmorpho)",
   "argv": [
-      "/usr/local/bin/xmorpho",
+      "/Users/timatherton/miniconda3/bin/xmorpho",
       "-f",
       "{connection_file}"
   ],

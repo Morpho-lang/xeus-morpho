@@ -34,3 +34,7 @@ cmake -DCMAKE_PREFIX_PATH="/usr/local/Caskroom/miniforge/base/share/cmake;/usr/l
 
 We also needed up-to-date jupyter, so used brew to install jupyterlab 
 
+----
+To update packages use: 
+
+conda update --channel=conda-forge xeus xtl xeus-zmq
