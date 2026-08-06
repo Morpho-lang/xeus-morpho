@@ -28,10 +28,12 @@ namespace xeus_morpho
     
     int complete(program* /*p*/, const std::string& code, int cursor_pos, nl::json& matches)
     {
+        // Keep in sync with morpho-cli cli_complete (cli.c words[]).
         static const std::vector<std::string> keywords = {
-            "as", "and", "break", "class", "continue", "do", "else", "for", "false",
-            "fn", "help", "if", "in", "import", "nil", "or", "print", "return",
-            "true", "var", "while", "quit", "self", "super", "this", "try", "catch"
+            "as", "and", "break", "catch", "class", "continue", "do", "else",
+            "false", "fn", "for", "help", "if", "import", "in", "is", "nil",
+            "or", "print", "quit", "return", "self", "super", "true", "try",
+            "var", "while", "with"
         };
 
         // Jupyter cursor_pos is in [0, code.size()]. Scan only characters before the cursor.
