@@ -13,8 +13,10 @@
 
 #include "nlohmann/json.hpp"
 
+#include "xeus/xhelper.hpp"
 #include "xeus/xinterpreter.hpp"
 
+#include "xeus-morpho/xhelp.hpp"
 #include "xeus-morpho/xinterpreter.hpp"
 
 namespace nl = nlohmann;
@@ -84,6 +86,26 @@ namespace xeus_morpho
         kernel_res["payload"] = nl::json::array();
         kernel_res["user_expressions"] = nl::json::object();
         kernel_res["status"] = "ok";
+
+        // CLI-style help / ? — publish markdown in-place, do not compile.
+        std::string help_query;
+        if (parse_help_directive(code, help_query)) {
+            nl::json pub_data;
+            if (help_query.empty()) {
+                pub_data["text/plain"] = "Usage: help <topic> or ? <topic>";
+            } else {
+                std::string markdown;
+                std::string plain;
+                lookup_help(help_query, markdown, plain);
+                if (!markdown.empty()) {
+                    pub_data["text/markdown"] = markdown;
+                }
+                pub_data["text/plain"] = plain.empty() ? markdown : plain;
+            }
+            publish_execution_result(execution_count, std::move(pub_data), nl::json::object());
+            cb(kernel_res);
+            return;
+        }
         
         error err; // Error structure that received messages from the compiler and VM
         error_init(&err);
@@ -174,16 +196,25 @@ namespace xeus_morpho
         return result;
     }
 
-    nl::json interpreter::inspect_request_impl(const std::string& /*code*/,
-                                                      int /*cursor_pos*/,
+    nl::json interpreter::inspect_request_impl(const std::string& code,
+                                                      int cursor_pos,
                                                       int /*detail_level*/)
     {
-        nl::json jresult;
-        jresult["status"] = "ok";
-        jresult["found"] = false;
-        jresult["data"] = nl::json::object();
-        jresult["metadata"] = nl::json::object();
-        return jresult;
+        const std::string query = extract_help_query(code, cursor_pos);
+        if (query.empty()) {
+            return xeus::create_inspect_reply(false);
+        }
+
+        std::string markdown;
+        std::string plain;
+        if (!lookup_help(query, markdown, plain)) {
+            return xeus::create_inspect_reply(false);
+        }
+
+        nl::json data;
+        data["text/markdown"] = markdown;
+        data["text/plain"] = plain.empty() ? markdown : plain;
+        return xeus::create_inspect_reply(true, data, nl::json::object());
     }
 
     void interpreter::shutdown_request_impl() {

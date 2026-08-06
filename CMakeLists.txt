@@ -162,12 +162,14 @@ endif ()
 
 set(XEUS_MORPHO_HEADERS
     include/xeus-morpho/xeus_morpho_config.hpp
+    include/xeus-morpho/xhelp.hpp
     include/xeus-morpho/xinterpreter.hpp
 )
 
 set(XEUS_MORPHO_SRC
     src/xinterpreter.cpp
     src/xcomplete.cpp
+    src/xhelp.cpp
 )
 
 set(XEUS_MORPHO_MAIN_SRC
