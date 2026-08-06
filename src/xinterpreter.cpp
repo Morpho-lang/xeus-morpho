@@ -11,16 +11,9 @@
 #include <iostream>
 #include <sstream>
 
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-
 #include "nlohmann/json.hpp"
 
-#include "xeus/xinput.hpp"
 #include "xeus/xinterpreter.hpp"
-#include "xeus/xhelper.hpp"
 
 #include "xeus-morpho/xinterpreter.hpp"
 
@@ -40,10 +33,6 @@ namespace xeus_morpho
         interpreter *thisinterpreter = (interpreter *) ref;
         
         thisinterpreter->publish_stream("stderr", "Warning '" + std::string(warning->id) + "': " + std::string(warning->msg));
-    }
-
-    extern "C" void xeus_morphodebuggerfn (vm* /*v*/, void* /*ref*/, char* /*str */) {
-
     }
 
     // implemented in xcomplete.cpp
@@ -66,9 +55,10 @@ namespace xeus_morpho
 
     interpreter::~interpreter()
     {
+        // Match Morpho CLI teardown order: VM, then program, then compiler.
+        morpho_freevm(morpho_vm);
         morpho_freeprogram(morpho_program);
         morpho_freecompiler(morpho_compiler);
-        morpho_freevm(morpho_vm);
 
         morpho_finalize();
     }
@@ -172,8 +162,6 @@ namespace xeus_morpho
     {
         nl::json matches = nl::json::array();
 
-        std::cout << "COMPLETE_REQUEST";
-        
         int cursor_start = complete(morpho_program, code, cursor_pos, matches);
         
         nl::json result;

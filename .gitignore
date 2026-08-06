@@ -4,3 +4,4 @@ src/.vscode/settings.json
 .DS_Store
 .DS_Store
 share/jupyter/kernels/xmorpho/kernel.json
+/build

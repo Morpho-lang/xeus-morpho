@@ -47,11 +47,6 @@ void handler(int sig)
 }
 #endif
 
-void stop_handler(int /*sig*/)
-{
-    exit(0);
-}
-
 bool should_print_version(int argc, char* argv[])
 {
     for (int i = 0; i < argc; ++i)
@@ -103,15 +98,12 @@ int main(int argc, char* argv[])
         std::clog.setstate(std::ios_base::failbit);
     }
 
-    // Registering SIGSEGV handler
+    // Registering SIGSEGV handler. Leave SIGINT to xeus so interrupt does not
+    // exit the kernel process.
 #ifdef __GNUC__
     std::clog << "registering handler for SIGSEGV" << std::endl;
     signal(SIGSEGV, handler);
-
-    // Registering SIGINT and SIGKILL handlers
-    signal(SIGKILL, stop_handler);
 #endif
-    signal(SIGINT, stop_handler);
 
     std::unique_ptr<xeus::xcontext> context = xeus::make_zmq_context();
     

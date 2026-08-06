@@ -12,10 +12,73 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
 
 set(XEUS_MORPHO_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-set(MORPHO_INCLUDE_DIR /usr/local/include)
+#-------------------------------------------------------------------------------
+# Include the morpho library
+#-------------------------------------------------------------------------------
 
+find_file(MORPHO_HEADER
+    morpho.h
+    HINTS
+        $ENV{MORPHO_ROOT}/include
+        $ENV{MORPHO_ROOT}/include/morpho
+        $ENV{CONDA_PREFIX}/include
+        $ENV{CONDA_PREFIX}/include/morpho
+        ${CMAKE_INSTALL_PREFIX}/include
+        ${CMAKE_INSTALL_PREFIX}/include/morpho
+        /usr/local/include
+        /usr/local/include/morpho
+        /opt/homebrew/include
+        /opt/homebrew/include/morpho
+        /home/linuxbrew/.linuxbrew/include
+        /home/linuxbrew/.linuxbrew/include/morpho
+        "C:/Program Files/Morpho/include/morpho"
+)
+
+if (NOT MORPHO_HEADER)
+    message(FATAL_ERROR
+        "Could not find morpho.h. Set MORPHO_ROOT or install Morpho "
+        "(e.g. under /usr/local, Homebrew, or CONDA_PREFIX).")
+endif ()
+
+message(STATUS "Found morpho.h at ${MORPHO_HEADER}")
+
+# Directory containing morpho.h (typically .../include/morpho)
+get_filename_component(MORPHO_INCLUDE ${MORPHO_HEADER} DIRECTORY)
+message(STATUS "Including Morpho directory ${MORPHO_INCLUDE}")
+
+# Morpho headers in subfolders (if present)
+file(GLOB morpho_subdirectories LIST_DIRECTORIES true ${MORPHO_INCLUDE}/*)
+foreach(dir ${morpho_subdirectories})
+    if (IS_DIRECTORY ${dir})
+        list(APPEND MORPHO_INCLUDE_SUBDIRS ${dir})
+        message(STATUS "Including Morpho subdirectory ${dir}")
+    endif ()
+endforeach()
+
+find_library(MORPHO_LIBRARY
+    NAMES morpho libmorpho
+    HINTS
+        $ENV{MORPHO_ROOT}/lib
+        $ENV{CONDA_PREFIX}/lib
+        ${CMAKE_INSTALL_PREFIX}/lib
+        ${CMAKE_INSTALL_PREFIX}/lib64
+        /usr/local/lib
+        /opt/homebrew/lib
+        /home/linuxbrew/.linuxbrew/lib
+        "C:/Program Files/Morpho/lib"
+)
+
+if (NOT MORPHO_LIBRARY)
+    message(FATAL_ERROR
+        "Could not find libmorpho. Set MORPHO_ROOT or ensure the Morpho library "
+        "is visible to CMake.")
+endif ()
+
+message(STATUS "Found Morpho library: ${MORPHO_LIBRARY}")
+
+#-------------------------------------------------------------------------------
 # Versioning
-# ==========
+#-------------------------------------------------------------------------------
 
 file(STRINGS "${XEUS_MORPHO_INCLUDE_DIR}/xeus-morpho/xeus_morpho_config.hpp" version_defines
      REGEX "#define XEUS_MORPHO_VERSION_(MAJOR|MINOR|PATCH)")
@@ -28,8 +91,9 @@ set(${PROJECT_NAME}_VERSION
     ${XEUS_MORPHO_VERSION_MAJOR}.${XEUS_MORPHO_VERSION_MINOR}.${XEUS_MORPHO_VERSION_PATCH})
 message(STATUS "Building xeus-morpho v${${PROJECT_NAME}_VERSION}")
 
+#-------------------------------------------------------------------------------
 # Configuration
-# =============
+#-------------------------------------------------------------------------------
 
 include(GNUInstallDirs)
 
@@ -42,8 +106,9 @@ configure_file (
     "${CMAKE_CURRENT_SOURCE_DIR}/share/jupyter/kernels/xmorpho/kernel.json"
 )
 
+#-------------------------------------------------------------------------------
 # Build options
-# =============
+#-------------------------------------------------------------------------------
 
 option(XEUS_MORPHO_BUILD_STATIC "Build xeus-morpho static library" ON)
 OPTION(XEUS_MORPHO_BUILD_SHARED "Split xmorpho build into executable and library" ON)
@@ -52,12 +117,9 @@ OPTION(XEUS_MORPHO_BUILD_EXECUTABLE "Build the xmorpho executable" ON)
 OPTION(XEUS_MORPHO_USE_SHARED_XEUS "Link xmorpho  with the xeus shared library (instead of the static library)" ON)
 OPTION(XEUS_MORPHO_USE_SHARED_XEUS_MORPHO "Link xmorpho  with the xeus shared library (instead of the static library)" ON)
 
-
-
-
-
+#-------------------------------------------------------------------------------
 # Dependencies
-# ============
+#-------------------------------------------------------------------------------
 
 set(xtl_REQUIRED_VERSION 0.7.0)
 set(xeus_REQUIRED_VERSION 3.0.5)
@@ -69,8 +131,10 @@ if (NOT TARGET xeus AND NOT TARGET xeus-static)
     find_package(xeus ${xeus_REQUIRED_VERSION} REQUIRED)
 endif ()
 
+#-------------------------------------------------------------------------------
 # Flags
-# =====
+#-------------------------------------------------------------------------------
+
 include(CheckCXXCompilerFlag)
 
 if (MSVC)
@@ -92,8 +156,9 @@ endif ()
 
 
 
+#-------------------------------------------------------------------------------
 # Source files
-# ============
+#-------------------------------------------------------------------------------
 
 set(XEUS_MORPHO_HEADERS
     include/xeus-morpho/xeus_morpho_config.hpp
@@ -109,8 +174,9 @@ set(XEUS_MORPHO_MAIN_SRC
     src/main.cpp
 )
 
+#-------------------------------------------------------------------------------
 # Targets and link - Macros
-# =========================
+#-------------------------------------------------------------------------------
 
 include(CheckCXXCompilerFlag)
 
@@ -196,7 +262,8 @@ macro(xeus_morpho_create_target target_name linkage output_name)
     target_include_directories(${target_name}
                                PUBLIC
                                $<BUILD_INTERFACE:${XEUS_MORPHO_INCLUDE_DIR}>
-                               ${MORPHO_INCLUDE_DIR}
+                               ${MORPHO_INCLUDE}
+                               ${MORPHO_INCLUDE_SUBDIRS}
                                $<INSTALL_INTERFACE:include>)
 
     if (XEUS_MORPHO_USE_SHARED_XEUS)
@@ -205,7 +272,7 @@ macro(xeus_morpho_create_target target_name linkage output_name)
         set(XEUS_MORPHO_XEUS_TARGET xeus-static)
     endif ()
 
-    target_link_libraries(${target_name} PUBLIC ${XEUS_MORPHO_XEUS_TARGET} xtl /usr/local/lib/libmorpho.dylib)
+    target_link_libraries(${target_name} PUBLIC ${XEUS_MORPHO_XEUS_TARGET} xtl ${MORPHO_LIBRARY})
     if (WIN32 OR CYGWIN)
         #
     elseif (APPLE)
@@ -216,8 +283,9 @@ macro(xeus_morpho_create_target target_name linkage output_name)
     
 endmacro()
 
+#-------------------------------------------------------------------------------
 # xeus-morpho
-# ===========
+#-------------------------------------------------------------------------------
 
 set(XEUS_MORPHO_TARGETS "")
 
@@ -238,8 +306,10 @@ if (XEUS_MORPHO_BUILD_STATIC)
     list(APPEND XEUS_MORPHO_TARGETS xeus-morpho-static)
 endif ()
 
+#-------------------------------------------------------------------------------
 # xmorpho
-# =======
+#-------------------------------------------------------------------------------
+
 if (XEUS_MORPHO_BUILD_EXECUTABLE)
     find_package(xeus-zmq 1.0.2 REQUIRED)
     add_executable(xmorpho ${XEUS_MORPHO_MAIN_SRC})
@@ -251,8 +321,10 @@ endif()
 
 
 
+#-------------------------------------------------------------------------------
 # Installation
-# ============
+#-------------------------------------------------------------------------------
+
 include(CMakePackageConfigHelpers)
 
 set(XEUS_MORPHO_CMAKECONFIG_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}" CACHE STRING "install path for xeus-morphoConfig.cmake")
