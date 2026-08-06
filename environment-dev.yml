@@ -7,10 +7,10 @@ dependencies:
   - cmake
   - cxx-compiler
   # Host dependencies
-  - xeus-zmq >=1.0.2,<2.0
+  - xeus >=5.1,<6
+  - xeus-zmq >=3.1,<4
   - nlohmann_json
   - cppzmq
-  - xtl
   # Test dependencies
   - pytest
   - jupyter_kernel_test>=0.4.3

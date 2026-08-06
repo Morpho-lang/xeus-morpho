@@ -1,9 +1,6 @@
 # ![xeus-morpho](docs/source/xeus-logo.svg)
 
-[![Build Status](https://github.com/softmattertheory/xeus-morpho/actions/workflows/main.yml/badge.svg)](https://github.com/softmattertheory/xeus-morpho/actions/workflows/main.yml)
-
-[![Documentation Status](http://readthedocs.org/projects/morpho-lang/badge/?version=latest)](https://morpho-langreadthedocs.io/en/latest/?badge=latest)
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/softmattertheory/xeus-morpho/main?urlpath=/lab/tree/notebooks/xeus-morpho.ipynb)
+[![Documentation Status](http://readthedocs.org/projects/morpho-lang/badge/?version=latest)](https://morpho-lang.readthedocs.io/en/latest/?badge=latest)
 
 `xeus-morpho` is a Jupyter kernel for the [morpho language](https://github.com/Morpho-lang/morpho) based on the native implementation of the
 Jupyter protocol [xeus](https://github.com/jupyter-xeus/xeus).
@@ -22,43 +19,26 @@ which is already installed in the anaconda distribution.
 The safest usage is to create an environment named `xeus-morpho`
 
 ```bash
-mamba create -n  `xeus-morpho`
-source activate  `xeus-morpho`
+mamba create -n xeus-morpho
+source activate xeus-morpho
 ```
-
-<!-- ### Installing from conda-forge
-
-Then you can install in this environment `xeus-morpho` and its dependencies
-
-```bash
-mamba install`xeus-morpho` notebook -c conda-forge
-``` -->
 
 ### Installing from source
 
-Or you can install it from the sources, you will first need to install dependencies
+Install dependencies (xeus 5.x / xeus-zmq 3.x):
 
 ```bash
-mamba install cmake cxx-compiler xeus-zmq nlohmann_json cppzmq xtl jupyterlab -c conda-forge
+mamba install cmake cxx-compiler xeus "xeus-zmq>=3.1,<4" nlohmann_json cppzmq jupyterlab -c conda-forge
 ```
 
-Then you can compile the sources (replace `$CONDA_PREFIX` with a custom installation
-prefix if need be)
+Then compile the sources (replace `$CONDA_PREFIX` with a custom installation
+prefix if need be). Morpho 0.6 must be installed; set `MORPHO_ROOT` if needed.
 
 ```bash
 mkdir build && cd build
 cmake .. -D CMAKE_PREFIX_PATH=$CONDA_PREFIX -D CMAKE_INSTALL_PREFIX=$CONDA_PREFIX -D CMAKE_INSTALL_LIBDIR=lib
 make && make install
 ```
-
-<!-- ## Trying it online
-
-To try out xeus-morpho interactively in your web browser, just click on the binder link:
-(Once Conda Package is Ready)
-
-[![Binder](binder-logo.svg)](https://mybinder.org/v2/gh/softmattertheory/xeus-morpho/main?urlpath=/lab/tree/notebooks/xeus-morpho.ipynb) -->
-
-
 
 ## Documentation
 
@@ -71,10 +51,11 @@ http://morpho-lang.readthedocs.io
 
 `xeus-morpho` depends on
 
-- [xeus-zmq](https://github.com/jupyter-xeus/xeus-zmq)
-- [xtl](https://github.com/xtensor-stack/xtl)
+- [xeus](https://github.com/jupyter-xeus/xeus) (>= 5.1, < 6)
+- [xeus-zmq](https://github.com/jupyter-xeus/xeus-zmq) (>= 3.1, < 4)
 - [nlohmann_json](https://github.com/nlohmann/json)
 - [cppzmq](https://github.com/zeromq/cppzmq)
+- [morpho](https://github.com/Morpho-lang/morpho) (0.6)
 
 ## Contributing
 

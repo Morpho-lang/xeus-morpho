@@ -1,7 +1,12 @@
+# Build trees
+/build/
+/build-xcode/
 build/*
-build-xcode/*
-src/.vscode/settings.json
-.DS_Store
-.DS_Store
+
+# Generated kernelspec
 share/jupyter/kernels/xmorpho/kernel.json
-/build
+
+# Editor / OS junk
+src/.vscode/settings.json
+**/.DS_Store
+.ipynb_checkpoints/

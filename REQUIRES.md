@@ -1,40 +1,23 @@
 # Required packages
 
-To build xeus-morpho, we need: 
+xeus-morpho targets **xeus 5.x** and **xeus-zmq 3.x** (matching the Morpho 0.6 Jupyter kernel stack).
 
-* Xtl
+Install build dependencies with conda-forge:
 
-    mamba install xtl
+```bash
+mamba install cmake cxx-compiler xeus "xeus-zmq>=3.1,<4" nlohmann_json cppzmq jupyterlab -c conda-forge
+```
 
-* xeus
+You also need a Morpho 0.6 install (`libmorpho` and headers). Set `MORPHO_ROOT` if CMake cannot find them.
 
-    mamba install xeus
+If CMake cannot find the conda packages, pass the prefix explicitly:
 
-* nlohmann_json
+```bash
+cmake -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" ..
+```
 
-    mamba install nlohmann_json
+To refresh packages later:
 
-* Xeus-Zmq
-
-    mamba install xeus-zmq
-
-* CppZmq
-
-    mamba install cppzmq
-
-* OpenSSL: 
-
-    brew install openssl
-    cmake . -DOPENSSL_ROOT_DIR=/usr/local/Cellar/openssl@3/3.1.0
-
-----
-Note that CMake can have trouble finding the CMake files from the above; may need to set CMAKE_PREFIX_PATH as follows:
-
-cmake -DCMAKE_PREFIX_PATH="/usr/local/Caskroom/miniforge/base/share/cmake;/usr/local/Caskroom/miniforge/base/lib/cmake" ..
-
-We also needed up-to-date jupyter, so used brew to install jupyterlab 
-
-----
-To update packages use: 
-
-conda update --channel=conda-forge xeus xtl xeus-zmq
+```bash
+conda update --channel=conda-forge xeus xeus-zmq
+```

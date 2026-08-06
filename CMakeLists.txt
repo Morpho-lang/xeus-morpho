@@ -121,12 +121,9 @@ OPTION(XEUS_MORPHO_USE_SHARED_XEUS_MORPHO "Link xmorpho  with the xeus shared li
 # Dependencies
 #-------------------------------------------------------------------------------
 
-set(xtl_REQUIRED_VERSION 0.7.0)
-set(xeus_REQUIRED_VERSION 3.0.5)
+set(xeus_REQUIRED_VERSION 5.1.0)
+set(xeus-zmq_REQUIRED_VERSION 3.1.0)
 
-if (NOT TARGET xtl)
-    find_package(xtl ${xtl_REQUIRED_VERSION} REQUIRED)
-endif ()
 if (NOT TARGET xeus AND NOT TARGET xeus-static)
     find_package(xeus ${xeus_REQUIRED_VERSION} REQUIRED)
 endif ()
@@ -274,7 +271,7 @@ macro(xeus_morpho_create_target target_name linkage output_name)
         set(XEUS_MORPHO_XEUS_TARGET xeus-static)
     endif ()
 
-    target_link_libraries(${target_name} PUBLIC ${XEUS_MORPHO_XEUS_TARGET} xtl ${MORPHO_LIBRARY})
+    target_link_libraries(${target_name} PUBLIC ${XEUS_MORPHO_XEUS_TARGET} ${MORPHO_LIBRARY})
     if (WIN32 OR CYGWIN)
         #
     elseif (APPLE)
@@ -313,7 +310,7 @@ endif ()
 #-------------------------------------------------------------------------------
 
 if (XEUS_MORPHO_BUILD_EXECUTABLE)
-    find_package(xeus-zmq 1.0.2 REQUIRED)
+    find_package(xeus-zmq ${xeus-zmq_REQUIRED_VERSION} REQUIRED)
     add_executable(xmorpho ${XEUS_MORPHO_MAIN_SRC})
     target_compile_features(xmorpho PRIVATE cxx_std_17)
     xeus_morpho_set_common_options(xmorpho)
