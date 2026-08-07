@@ -7,57 +7,66 @@
 Usage
 =====
 
-Launch the Jupyter notebook with `jupyter notebook` or Jupyter lab with `jupyter lab` and launch
-a new morpho notebook by selecting the **xmorpho** kernel.
+Launch JupyterLab (or Classic Notebook) and open a new notebook with the
+**morpho (xmorpho)** kernel.
 
-Code execution and variable display
------------------------------------
+Installation is covered in the project README. Morpho 0.6 and a matching
+``xmorpho`` kernelspec must be available in the environment.
 
-.. image:: code_exec.gif
-   :alt: basic_code_execution
-
-Output streams
+Code execution
 --------------
 
-.. image:: streams.gif
-   :alt: streams
+Cells run Morpho source through the kernel. Printed output (the ``print``
+statement and ``System.print``) appears as the cell result. Compilation and
+runtime errors are reported with Morpho's message and stack trace.
 
-Input streams
--------------
+Variables persist across cells in the same kernel session, as in the Morpho
+REPL.
 
-.. image:: input.gif
-   :alt: input
+Help
+----
 
-Error handling
---------------
+Morpho's help system works in the notebook:
 
-.. image:: error.gif
-   :alt: error_handling
+- Run ``help`` or ``help Topic`` in a cell (or ``?`` / ``Topic?``).
+- Use Shift-Tab (inspect) on a topic name for the same markdown help.
 
-Inspect
--------
-
-.. image:: inspect.gif
-   :alt: inspect
+Help is rendered as Markdown, including fenced Morpho examples when the
+labextension is installed.
 
 Code completion
 ---------------
 
-.. image:: code_completion.gif
-   :alt: code_completion
+Tab completion offers Morpho keywords (aligned with morpho-cli). Symbol and
+help-topic completion are not available yet.
 
-Rich display
-------------
+Incomplete code
+---------------
 
-.. image:: rich_disp.gif
-   :alt: rich_display
+When editing a cell, the kernel's ``is_complete`` check matches morpho-cli:
+brackets must balance. Help / ``?`` lines are always treated as complete.
 
-And of course widgets
----------------------
+Syntax highlighting
+-------------------
 
-.. image:: widgets.gif
-   :alt: widgets
+Cell highlighting for Morpho is provided by the optional JupyterLab 4
+extension in ``jupyterlab-morpho/``. Without it, cells are plain text. See
+the extension README for build and install steps.
 
-.. image:: binary.gif
-   :alt: widgets_binary
+Warnings
+--------
 
+Morpho warnings are published on the stderr stream for the cell.
+
+Not yet supported
+-----------------
+
+The following Jupyter features are **not** wired up yet:
+
+- Interactive stdin (``System.readline``)
+- Rich display / ``Show`` as notebook images (Morpho still launches morphoview)
+- Jupyter widgets and comms
+- The Jupyter debugger protocol
+
+Those may appear in later releases; do not expect cookiecutter-style demos
+for them.

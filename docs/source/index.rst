@@ -17,10 +17,16 @@ xeus_.
 Licensing
 ---------
 
-Distributed under the terms of the MIT license.  
+Distributed under the terms of the MIT license.
 
 The full license is in the file LICENSE, distributed with this software.
 
+
+.. toctree::
+   :caption: USER GUIDE
+   :maxdepth: 2
+
+   usage
 
 .. toctree::
    :caption: DEVELOPER ZONE
