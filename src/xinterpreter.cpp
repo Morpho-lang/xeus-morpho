@@ -256,7 +256,9 @@ namespace xeus_morpho
         result["language_info"]["name"] = "morpho";
         result["language_info"]["version"] = MORPHO_VERSIONSTRING;
         result["language_info"]["mimetype"] = "text/x-morpho";
-        result["language_info"]["file_extension"] = "morpho";
+        result["language_info"]["file_extension"] = ".morpho";
+        result["language_info"]["codemirror_mode"] = "morpho";
+        result["language_info"]["pygments_lexer"] = "text";
         result["status"] = "ok";
         return result;
     }

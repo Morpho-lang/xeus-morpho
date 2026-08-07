@@ -40,6 +40,30 @@ cmake .. -D CMAKE_PREFIX_PATH=$CONDA_PREFIX -D CMAKE_INSTALL_PREFIX=$CONDA_PREFI
 make && make install
 ```
 
+On macOS, if you copy `xmorpho` / `libxeus-morpho*.dylib` by hand (instead of
+`make install`), re-sign afterward or the kernel may exit with SIGKILL:
+
+```bash
+codesign -s - -f $PREFIX/bin/xmorpho
+codesign -s - -f $PREFIX/lib/libxeus-morpho.0.1.0.dylib
+```
+
+### Syntax highlighting (JupyterLab 4)
+
+Morpho cell highlighting is a separate prototype labextension under
+[`jupyterlab-morpho/`](jupyterlab-morpho/). After building the kernel:
+
+```bash
+cd jupyterlab-morpho
+jlpm install
+jlpm build
+jupyter labextension develop . --overwrite
+```
+
+Restart JupyterLab (hard-refresh the browser). See
+[`jupyterlab-morpho/README.md`](jupyterlab-morpho/README.md) for details.
+Token tables are kept extractable for a future shared Morpho syntax package.
+
 ## Documentation
 
 To get started with using `xeus-morpho`, check out the full documentation

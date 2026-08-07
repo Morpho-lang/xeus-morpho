@@ -10,3 +10,12 @@ share/jupyter/kernels/xmorpho/kernel.json
 src/.vscode/settings.json
 **/.DS_Store
 .ipynb_checkpoints/
+
+# jupyterlab-morpho frontend build artifacts
+jupyterlab-morpho/node_modules/
+jupyterlab-morpho/.yarn/
+jupyterlab-morpho/lib/
+jupyterlab-morpho/tsconfig.tsbuildinfo
+jupyterlab-morpho/jupyterlab_morpho/labextension/
+jupyterlab-morpho/*.egg-info/
+jupyterlab-morpho/dist/

@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.5.0", "jupyterlab>=4.0.0,<5"]
+build-backend = "hatchling.build"
+
+[project]
+name = "jupyterlab_morpho"
+version = "0.1.1"
+description = "Morpho CodeMirror 6 language support for JupyterLab (prototype)"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Tim Atherton" }]
+requires-python = ">=3.8"
+classifiers = [
+    "Framework :: Jupyter",
+    "Framework :: Jupyter :: JupyterLab",
+    "Framework :: Jupyter :: JupyterLab :: 4",
+    "Framework :: Jupyter :: JupyterLab :: Extensions",
+    "Framework :: Jupyter :: JupyterLab :: Extensions :: Prebuilt",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["jupyterlab>=4.0.0,<5"]
+
+[tool.hatch.build.targets.sdist]
+artifacts = ["jupyterlab_morpho/labextension"]
+exclude = [".github", "**/.*", "node_modules"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"jupyterlab_morpho/labextension" = "share/jupyter/labextensions/jupyterlab-morpho"
+"install.json" = "share/jupyter/labextensions/jupyterlab-morpho/install.json"
+
+[tool.hatch.build.hooks.jupyter-builder]
+dependencies = ["hatch-jupyter-builder>=0.5"]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = [
+    "jupyterlab_morpho/labextension/package.json",
+]
+skip-if-exists = ["jupyterlab_morpho/labextension/package.json"]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+build_cmd = "build:prod"
+npm = ["jlpm"]
+
+[tool.hatch.build.hooks.jupyter-builder.editable-build-kwargs]
+build_cmd = "install:extension"
+npm = ["jlpm"]
+source_dir = "src"
+build_dir = "lib"

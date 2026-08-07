@@ -1,0 +1,6 @@
+node_modules/
+lib/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+jupyterlab_morpho/labextension/
+.yarn/

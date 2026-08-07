@@ -144,6 +144,172 @@ namespace xeus_morpho
             }
         }
 
+        bool starts_with_indent(const std::string& line)
+        {
+            return line.size() >= 4 && line.compare(0, 4, "    ") == 0;
+        }
+
+        bool is_tab_indented(const std::string& line)
+        {
+            return !line.empty() && line[0] == '\t';
+        }
+
+        bool is_code_indented(const std::string& line)
+        {
+            return starts_with_indent(line) || is_tab_indented(line);
+        }
+
+        bool is_blank_line(const std::string& line)
+        {
+            return line.find_first_not_of(" \t") == std::string::npos;
+        }
+
+        std::string dedent_code_line(const std::string& line)
+        {
+            if (starts_with_indent(line)) {
+                return line.substr(4);
+            }
+            if (is_tab_indented(line)) {
+                return line.substr(1);
+            }
+            return line;
+        }
+
+        /** True if line opens/closes a markdown fence (```...). */
+        bool is_fence_line(const std::string& line, std::string& info)
+        {
+            info.clear();
+            std::size_t i = 0;
+            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) {
+                ++i;
+            }
+            if (line.compare(i, 3, "```") != 0) {
+                return false;
+            }
+            info = trim_ascii(line.substr(i + 3));
+            return true;
+        }
+
+        /**
+         * Jupyter highlights fenced code by language; Morpho help uses indented
+         * blocks with no language. Convert those to ```morpho fences.
+         * Leave fences that already name a language alone; unlabeled ``` become morpho.
+         */
+        std::string fence_code_as_morpho(const std::string& md)
+        {
+            std::vector<std::string> lines;
+            std::size_t start = 0;
+            while (start < md.size()) {
+                std::size_t end = md.find('\n', start);
+                if (end == std::string::npos) {
+                    lines.push_back(md.substr(start));
+                    break;
+                }
+                lines.push_back(md.substr(start, end - start));
+                start = end + 1;
+                if (start == md.size()) {
+                    // Trailing newline → empty final line omitted; OK.
+                    break;
+                }
+            }
+            if (md.empty()) {
+                return md;
+            }
+
+            std::string out;
+            out.reserve(md.size() + 64);
+            bool in_fence = false;
+            bool morpho_fence = false;
+
+            for (std::size_t i = 0; i < lines.size(); ++i) {
+                std::string fence_info;
+                if (is_fence_line(lines[i], fence_info)) {
+                    if (!in_fence) {
+                        in_fence = true;
+                        morpho_fence = fence_info.empty() || fence_info == "morpho";
+                        if (fence_info.empty()) {
+                            std::size_t pad = 0;
+                            while (pad < lines[i].size()
+                                   && (lines[i][pad] == ' ' || lines[i][pad] == '\t')) {
+                                ++pad;
+                            }
+                            out.append(lines[i], 0, pad);
+                            out += "```morpho\n";
+                        } else {
+                            out += lines[i];
+                            out += '\n';
+                        }
+                    } else {
+                        // Pair with jupyterlab-morpho language.ts tokenTable:
+                        // Lab drops a final unstyled char in highlighted fences.
+                        if (morpho_fence && (out.size() < 2 || out[out.size() - 2] != '\n')) {
+                            out += '\n';
+                        }
+                        in_fence = false;
+                        morpho_fence = false;
+                        out += lines[i];
+                        out += '\n';
+                    }
+                    continue;
+                }
+
+                if (in_fence) {
+                    out += lines[i];
+                    out += '\n';
+                    continue;
+                }
+
+                if (is_code_indented(lines[i])) {
+                    std::size_t j = i;
+                    while (j < lines.size()) {
+                        std::string dummy;
+                        if (is_fence_line(lines[j], dummy)) {
+                            break;
+                        }
+                        if (is_code_indented(lines[j])) {
+                            ++j;
+                            continue;
+                        }
+                        if (is_blank_line(lines[j])) {
+                            std::size_t k = j + 1;
+                            while (k < lines.size() && is_blank_line(lines[k])) {
+                                ++k;
+                            }
+                            if (k < lines.size() && is_code_indented(lines[k])) {
+                                j = k;
+                                continue;
+                            }
+                        }
+                        break;
+                    }
+
+                    out += "```morpho\n";
+                    for (std::size_t n = i; n < j; ++n) {
+                        if (is_blank_line(lines[n])) {
+                            out += '\n';
+                        } else {
+                            out += dedent_code_line(lines[n]);
+                            out += '\n';
+                        }
+                    }
+                    // Pair with jupyterlab-morpho language.ts tokenTable:
+                    // Lab drops a final unstyled char; trailing blank preserves it.
+                    out += "\n```\n";
+                    i = j - 1;
+                    continue;
+                }
+
+                out += lines[i];
+                out += '\n';
+            }
+
+            // Preserve whether the original ended without a trailing newline.
+            if (!md.empty() && md.back() != '\n' && !out.empty() && out.back() == '\n') {
+                out.pop_back();
+            }
+            return out;
+        }
+
         /**
          * Render a resolved topic as markdown for Jupyter.
          * Expands MD_SHOW_SUBTOPICS (unlike morpho_helpasmd raw dump) and
@@ -179,6 +345,10 @@ namespace xeus_morpho
                         break;
                     }
                 }
+            }
+
+            if (!out.empty()) {
+                out = fence_code_as_morpho(out);
             }
 
             return !out.empty();
