@@ -172,11 +172,37 @@ namespace xeus_morpho
     {
     }
 
-    nl::json interpreter::is_complete_request_impl(const std::string& /*code*/)
+    nl::json interpreter::is_complete_request_impl(const std::string& code)
     {
-        nl::json jresult;
-        jresult["status"] = "complete";
-        return jresult;
+        // Same idea as morpho-cli cli_multiline: keep collecting while
+        // brackets are unbalanced; help/? always finishes immediately.
+        std::string help_query;
+        if (parse_help_directive(code, help_query)) {
+            return xeus::create_is_complete_reply("complete");
+        }
+
+        int balance = 0;
+        for (unsigned char c : code) {
+            switch (c) {
+                case '(':
+                case '{':
+                case '[':
+                    ++balance;
+                    break;
+                case ')':
+                case '}':
+                case ']':
+                    --balance;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (balance > 0) {
+            return xeus::create_is_complete_reply("incomplete", "  ");
+        }
+        return xeus::create_is_complete_reply("complete");
     }
 
     nl::json interpreter::complete_request_impl(const std::string&  code,
