@@ -148,10 +148,14 @@ namespace xeus_morpho
 
             // Now process the output 
             if (success) {
-                nl::json pub_data;
-                pub_data["text/plain"] = buffer;
+                // Only publish a result when Morpho produced output; an empty
+                // execute_result shows up as a blank Out[] line in the frontend.
+                if (!buffer.empty()) {
+                    nl::json pub_data;
+                    pub_data["text/plain"] = buffer;
 
-                publish_execution_result(execution_count, std::move(pub_data), nl::json::object());
+                    publish_execution_result(execution_count, std::move(pub_data), nl::json::object());
+                }
                 
                 kernel_res["status"] = "ok";
                 kernel_res["user_expressions"] = nl::json::object();

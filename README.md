@@ -1,47 +1,58 @@
 # ![xeus-morpho](docs/source/xeus-logo.svg)
 
-[![Documentation Status](http://readthedocs.org/projects/morpho-lang/badge/?version=latest)](https://morpho-lang.readthedocs.io/en/latest/?badge=latest)
-
 `xeus-morpho` is a Jupyter kernel for the [morpho language](https://github.com/Morpho-lang/morpho) based on the native implementation of the
 Jupyter protocol [xeus](https://github.com/jupyter-xeus/xeus).
 
 ## Installation
 
-xeus-morpho has not been packaged for the mamba (or conda) package manager.
+xeus-morpho is not packaged for conda/mamba yet; build it from source.
 
-To ensure that the installation works, it is preferable to install `xeus-morpho` in a
-fresh environment. It is also needed to use a
-[miniforge](https://github.com/conda-forge/miniforge#mambaforge) or
-[miniconda](https://conda.io/miniconda.html) installation because with the full
-[anaconda](https://www.anaconda.com/) you may have a conflict with the `zeromq` library
-which is already installed in the anaconda distribution.
+Use a [miniforge](https://github.com/conda-forge/miniforge) or
+[miniconda](https://conda.io/miniconda.html) environment. Full Anaconda
+installs often conflict on ZeroMQ.
 
-The safest usage is to create an environment named `xeus-morpho`
+### Create an environment
+
+Preferred (matches [`environment-dev.yml`](environment-dev.yml)):
+
+```bash
+mamba env create -f environment-dev.yml
+mamba activate xeus-morpho
+```
+
+Or create an empty env and install deps by hand (xeus 5.x / xeus-zmq 3.x):
 
 ```bash
 mamba create -n xeus-morpho
-source activate xeus-morpho
-```
-
-### Installing from source
-
-Install dependencies (xeus 5.x / xeus-zmq 3.x):
-
-```bash
+mamba activate xeus-morpho
 mamba install cmake cxx-compiler xeus "xeus-zmq>=3.1,<4" nlohmann_json cppzmq jupyterlab -c conda-forge
 ```
 
-Then compile the sources (replace `$CONDA_PREFIX` with a custom installation
-prefix if need be). Morpho 0.6 must be installed; set `MORPHO_ROOT` if needed.
+You also need a **Morpho 0.6** install (`libmorpho` and headers). Current kernel
+features (stdin, help topics, markdown help) expect Morpho **0.6.4+** APIs.
+Set `MORPHO_ROOT` if CMake cannot find Morpho under the usual prefixes.
+
+### Build and install the kernel
 
 ```bash
 mkdir build && cd build
-cmake .. -D CMAKE_PREFIX_PATH=$CONDA_PREFIX -D CMAKE_INSTALL_PREFIX=$CONDA_PREFIX -D CMAKE_INSTALL_LIBDIR=lib
-make && make install
+cmake .. \
+  -D CMAKE_PREFIX_PATH=$CONDA_PREFIX \
+  -D CMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
+  -D CMAKE_INSTALL_LIBDIR=lib
+cmake --build . -j
+cmake --install .
 ```
 
+(`make && make install` works too if CMake generated Unix Makefiles.)
+
+Install puts `xmorpho` in `$PREFIX/bin` and a kernelspec in
+`$PREFIX/share/jupyter/kernels/xmorpho`. Jupyter must see that prefix: use the
+same env’s `jupyter` / JupyterLab, or copy the kernelspec into your Jupyter
+data dir (for example `~/Library/Jupyter/kernels/xmorpho` on macOS).
+
 On macOS, if you copy `xmorpho` / `libxeus-morpho*.dylib` by hand (instead of
-`make install`), re-sign afterward or the kernel may exit with SIGKILL:
+`cmake --install`), re-sign afterward or the kernel may exit with SIGKILL:
 
 ```bash
 codesign -s - -f $PREFIX/bin/xmorpho
@@ -66,10 +77,8 @@ Token tables are kept extractable for a future shared Morpho syntax package.
 
 ## Documentation
 
-To get started with using `xeus-morpho`, check out the full documentation
-
-http://morpho-lang.readthedocs.io
-
+- Kernel usage notes: [`docs/source/usage.rst`](docs/source/usage.rst)
+- Morpho language docs: https://morpho-lang.readthedocs.io
 
 ## Dependencies
 
@@ -79,7 +88,7 @@ http://morpho-lang.readthedocs.io
 - [xeus-zmq](https://github.com/jupyter-xeus/xeus-zmq) (>= 3.1, < 4)
 - [nlohmann_json](https://github.com/nlohmann/json)
 - [cppzmq](https://github.com/zeromq/cppzmq)
-- [morpho](https://github.com/Morpho-lang/morpho) (0.6)
+- [morpho](https://github.com/Morpho-lang/morpho) (0.6; 0.6.4+ recommended)
 
 ## Contributing
 
