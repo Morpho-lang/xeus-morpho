@@ -451,17 +451,30 @@ namespace xeus_morpho
 
         constexpr const char* help_kw = "help";
         constexpr std::size_t help_len = 4;
-        if (code.compare(i, help_len, help_kw) != 0) {
-            return false;
+        if (code.compare(i, help_len, help_kw) == 0) {
+            std::size_t after = i + help_len;
+            if (after >= code.size() || std::isspace(static_cast<unsigned char>(code[after]))) {
+                query = trim_ascii(code.substr(after));
+                return true;
+            }
+            // e.g. "helpful" — not a help directive; fall through for Topic?
         }
 
-        std::size_t after = i + help_len;
-        if (after < code.size() && !std::isspace(static_cast<unsigned char>(code[after]))) {
-            // e.g. "helpful" — not a help directive
-            return false;
+        // Trailing Topic? (IPython-style): whole trimmed line is Ident?
+        std::size_t end = code.size();
+        while (end > i && std::isspace(static_cast<unsigned char>(code[end - 1]))) {
+            --end;
+        }
+        if (end > i && code[end - 1] == '?') {
+            const std::string topic = code.substr(i, end - i - 1);
+            if (!topic.empty()
+                && std::all_of(topic.begin(), topic.end(),
+                               [](unsigned char c) { return is_help_ident_char(c); })) {
+                query = topic;
+                return true;
+            }
         }
 
-        query = trim_ascii(code.substr(after));
-        return true;
+        return false;
     }
 }

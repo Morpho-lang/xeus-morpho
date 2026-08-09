@@ -37,8 +37,8 @@ labextension is installed.
 Code completion
 ---------------
 
-Tab completion offers Morpho keywords (aligned with morpho-cli). Symbol and
-help-topic completion are not available yet.
+Tab completion offers Morpho keywords (aligned with morpho-cli) plus help
+topic names from Morpho's help index. Symbol completion is not available yet.
 
 Incomplete code
 ---------------
@@ -63,10 +63,13 @@ Not yet supported
 
 The following Jupyter features are **not** wired up yet:
 
-- Interactive stdin (``System.readline``)
 - Rich display / ``Show`` as notebook images (Morpho still launches morphoview)
 - Jupyter widgets and comms
 - The Jupyter debugger protocol
 
 Those may appear in later releases; do not expect cookiecutter-style demos
 for them.
+
+Interactive stdin (``System.readline``) uses Jupyter's input prompt. Any
+``print`` output before ``readline`` is flushed to stdout so prompts are
+visible.

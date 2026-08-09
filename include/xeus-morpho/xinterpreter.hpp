@@ -29,9 +29,16 @@ extern "C"
 
     // Callback APIs live in Morpho's common.h; declare only what we use so we
     // do not pull the full internal header graph into the public interpreter API.
+    typedef enum {
+        MORPHO_INPUT_KEYPRESS,
+        MORPHO_INPUT_LINE
+    } morphoinputmode;
+
+    typedef void (*morphoinputfn) (vm *v, void *ref, morphoinputmode mode, varray_char *str);
     typedef void (*morphoprintfn) (vm *v, void *ref, char *str);
     typedef void (*morphowarningfn) (vm *v, void *ref, error *warning);
 
+    void morpho_setinputfn(vm *v, morphoinputfn inputfn, void *ref);
     void morpho_setprintfn(vm *v, morphoprintfn printfn, void *ref);
     void morpho_setwarningfn(vm *v, morphowarningfn warningfn, void *ref);
 }
@@ -47,6 +54,8 @@ namespace xeus_morpho
         interpreter();
         virtual ~interpreter();
         void print(const std::string& output);
+        /** Flush pending print output, then fill str via Jupyter stdin. */
+        void fill_input(varray_char* str);
 
     protected:
 

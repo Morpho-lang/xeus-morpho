@@ -14,6 +14,7 @@
 #include "nlohmann/json.hpp"
 
 #include "xeus/xhelper.hpp"
+#include "xeus/xinput.hpp"
 #include "xeus/xinterpreter.hpp"
 
 #include "xeus-morpho/xhelp.hpp"
@@ -37,6 +38,15 @@ namespace xeus_morpho
         thisinterpreter->publish_stream("stderr", "Warning '" + std::string(warning->id) + "': " + std::string(warning->msg));
     }
 
+    extern "C" void xeus_morphoinputfn(vm* /*v*/, void* ref, morphoinputmode mode, varray_char* str)
+    {
+        // System.readline only requests LINE mode; KEYPRESS is unused by libmorpho.
+        if (mode != MORPHO_INPUT_LINE || str == nullptr) {
+            return;
+        }
+        static_cast<interpreter*>(ref)->fill_input(str);
+    }
+
     // implemented in xcomplete.cpp
     int complete(program *p, const std::string& code, int cursor_pos, nl::json& matches);
  
@@ -49,6 +59,7 @@ namespace xeus_morpho
         morpho_vm = morpho_newvm();
         morpho_setprintfn(morpho_vm, xeus_morphoprintfn, this);
         morpho_setwarningfn(morpho_vm, xeus_morphowarningfn, this);
+        morpho_setinputfn(morpho_vm, xeus_morphoinputfn, this);
 
         xeus::register_interpreter(this);
         
@@ -73,6 +84,23 @@ namespace xeus_morpho
     void interpreter::print(const std::string& output)
     {
         buffer += output;
+    }
+
+    void interpreter::fill_input(varray_char* str)
+    {
+        // Publish any pending print output first so prompts appear before the input box.
+        if (!buffer.empty()) {
+            publish_stream("stdout", buffer);
+            buffer.clear();
+        }
+
+        std::string line = xeus::blocking_input_request("", /*password=*/false);
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+            line.pop_back();
+        }
+        if (!line.empty()) {
+            varray_charadd(str, &line[0], static_cast<int>(line.size()));
+        }
     }
 
     void interpreter::execute_request_impl(send_reply_callback cb,

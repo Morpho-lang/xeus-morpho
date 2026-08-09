@@ -24,8 +24,8 @@ namespace xeus_morpho
     bool lookup_help(const std::string& query, std::string& markdown, std::string& plain);
 
     /**
-     * If code is a CLI-style help/? directive, set query to the remainder
-     * (possibly empty) and return true. Otherwise return false.
+     * If code is a CLI-style help/? directive (leading help/? or trailing Topic?),
+     * set query to the remainder (possibly empty) and return true. Otherwise false.
      */
     bool parse_help_directive(const std::string& code, std::string& query);
 }
