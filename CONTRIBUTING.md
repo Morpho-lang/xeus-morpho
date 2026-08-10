@@ -44,9 +44,18 @@ make install -j2
 
 ## Running the tests
 
-To run Python tests, from the build directory, type
+Install test dependencies (already listed in `environment-dev.yml`):
 
 ```bash
-cd ../test
-pytest . -vvv
+conda install pytest "jupyter_kernel_test>=0.4.3" -c conda-forge
+# or: mamba install … / pip install pytest jupyter_kernel_test
 ```
+
+Ensure the `xmorpho` kernelspec points at the kernel you just built/installed (`jupyter kernelspec list`).
+
+```bash
+cd test
+pytest . -vv
+```
+
+The suite uses `jupyter_kernel_test` to exercise execute, help/`?`, completion, `is_complete`, inspect, and stdin (`System.readline`).

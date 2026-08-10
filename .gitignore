@@ -3,6 +3,12 @@
 /build-xcode/
 build/*
 
+# Local test venv
+.venv-test/
+.venv/
+**/__pycache__/
+.pytest_cache/
+
 # Generated kernelspec
 share/jupyter/kernels/xmorpho/kernel.json
 

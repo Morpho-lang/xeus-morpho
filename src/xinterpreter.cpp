@@ -187,13 +187,14 @@ namespace xeus_morpho
         } else {
             std::string id(err.id);
             std::string msg(err.msg);
-            
+
+            std::vector<std::string> stacktrace({"Compilation error '" + id + "': " + msg});
+
             kernel_res["status"] = "error";
             kernel_res["ename"] = id;
             kernel_res["evalue"] = msg;
-            
-            std::vector<std::string> stacktrace({"Compilation error '" + id + "': " + msg});
-            
+            kernel_res["traceback"] = stacktrace;
+
             publish_execution_error(id, msg, stacktrace);
         }
         
