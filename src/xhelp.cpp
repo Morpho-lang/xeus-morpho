@@ -12,12 +12,11 @@
 #include <vector>
 
 #include "xeus-morpho/xhelp.hpp"
+#include "morpho_compat.hpp"
 
-extern "C"
-{
-    #include <morpho.h>
-    #include <help.h>
-    #include <strng.h>
+extern "C" {
+#include <help.h>
+#include <strng.h>
 }
 
 namespace xeus_morpho
@@ -355,30 +354,128 @@ namespace xeus_morpho
         }
     }
 
-    std::string extract_help_query(const std::string& code, int cursor_pos)
+    std::size_t utf8_codepoint_index_to_byte(const std::string& s, int cursor_pos)
     {
-        if (cursor_pos < 0) {
-            cursor_pos = 0;
+        if (cursor_pos <= 0 || s.empty()) {
+            return 0;
         }
-        if (static_cast<std::size_t>(cursor_pos) > code.size()) {
-            cursor_pos = static_cast<int>(code.size());
+        std::size_t byte = 0;
+        int remaining = cursor_pos;
+        while (remaining > 0 && byte < s.size()) {
+            int n = morpho_utf8numberofbytes(s.c_str() + byte);
+            if (n < 1) {
+                n = 1;
+            }
+            if (byte + static_cast<std::size_t>(n) > s.size()) {
+                return s.size();
+            }
+            byte += static_cast<std::size_t>(n);
+            --remaining;
+        }
+        return byte;
+    }
+
+    int utf8_byte_index_to_codepoint(const std::string& s, std::size_t byte_index)
+    {
+        if (byte_index > s.size()) {
+            byte_index = s.size();
+        }
+        int cps = 0;
+        std::size_t byte = 0;
+        while (byte < byte_index) {
+            int n = morpho_utf8numberofbytes(s.c_str() + byte);
+            if (n < 1) {
+                n = 1;
+            }
+            byte += static_cast<std::size_t>(n);
+            ++cps;
+        }
+        return cps;
+    }
+
+    void append_toplevel_topics(std::string& markdown, std::string& plain)
+    {
+#ifdef MORPHO_INCLUDE_HELP
+        varray_value topics;
+        varray_valueinit(&topics);
+        morpho_helptopics(&topics);
+
+        std::vector<std::string> names;
+        names.reserve(topics.count);
+        for (unsigned int i = 0; i < topics.count; ++i) {
+            if (MORPHO_ISSTRING(topics.data[i])) {
+                names.emplace_back(MORPHO_GETCSTRING(topics.data[i]));
+            }
+        }
+        varray_valueclear(&topics);
+        std::sort(names.begin(), names.end());
+        if (names.empty()) {
+            return;
         }
 
-        int start = cursor_pos;
+        constexpr std::size_t ncols = 3;
+        const std::size_t cols = names.size() < ncols ? names.size() : ncols;
+
+        if (!markdown.empty() && markdown.back() != '\n') {
+            markdown += '\n';
+        }
+        markdown += "\n**Topics:**\n\n|";
+        for (std::size_t c = 0; c < cols; ++c) {
+            markdown += " |";
+        }
+        markdown += "\n|";
+        for (std::size_t c = 0; c < cols; ++c) {
+            markdown += "---|";
+        }
+        markdown += '\n';
+        for (std::size_t i = 0; i < names.size(); i += cols) {
+            markdown += '|';
+            for (std::size_t c = 0; c < cols; ++c) {
+                markdown += ' ';
+                if (i + c < names.size()) {
+                    markdown += names[i + c];
+                }
+                markdown += " |";
+            }
+            markdown += '\n';
+        }
+
+        if (!plain.empty() && plain.back() != '\n') {
+            plain += '\n';
+        }
+        plain += "\nTopics:\n";
+        for (std::size_t i = 0; i < names.size(); i += cols) {
+            for (std::size_t c = 0; c < cols && i + c < names.size(); ++c) {
+                if (c > 0) {
+                    plain += "  ";
+                }
+                plain += names[i + c];
+            }
+            plain += '\n';
+        }
+#else
+        (void) markdown;
+        (void) plain;
+#endif
+    }
+
+    std::string extract_help_query(const std::string& code, int cursor_pos)
+    {
+        const std::size_t pos = utf8_codepoint_index_to_byte(code, cursor_pos);
+        std::size_t start = pos;
         while (start > 0 && is_help_ident_char(static_cast<unsigned char>(code[start - 1]))) {
             --start;
         }
 
-        int end = cursor_pos;
-        while (static_cast<std::size_t>(end) < code.size()
-               && is_help_ident_char(static_cast<unsigned char>(code[end]))) {
+        std::size_t end = pos;
+        while (end < code.size() && is_help_ident_char(static_cast<unsigned char>(code[end]))) {
             ++end;
         }
 
         if (end <= start) {
             return {};
         }
-        return code.substr(static_cast<std::size_t>(start), static_cast<std::size_t>(end - start));
+        return code.substr(start, end - start);
     }
 
     bool lookup_help(const std::string& query, std::string& markdown, std::string& plain)
@@ -444,29 +541,41 @@ namespace xeus_morpho
             return false;
         }
 
-        if (code[i] == '?') {
-            query = trim_ascii(code.substr(i + 1));
+        // Help directives are a single logical line (CLI). Extra lines compile instead.
+        std::size_t line_end = code.find('\n', i);
+        if (line_end == std::string::npos) {
+            line_end = code.size();
+        }
+        std::size_t after_line = line_end;
+        while (after_line < code.size() && std::isspace(static_cast<unsigned char>(code[after_line]))) {
+            ++after_line;
+        }
+        if (after_line < code.size()) {
+            return false;
+        }
+
+        const std::string line = code.substr(i, line_end - i);
+
+        if (!line.empty() && line[0] == '?') {
+            query = trim_ascii(line.substr(1));
             return true;
         }
 
         constexpr const char* help_kw = "help";
         constexpr std::size_t help_len = 4;
-        if (code.compare(i, help_len, help_kw) == 0) {
-            std::size_t after = i + help_len;
-            if (after >= code.size() || std::isspace(static_cast<unsigned char>(code[after]))) {
-                query = trim_ascii(code.substr(after));
+        if (line.compare(0, help_len, help_kw) == 0) {
+            if (line.size() == help_len
+                || std::isspace(static_cast<unsigned char>(line[help_len]))) {
+                query = trim_ascii(line.substr(help_len));
                 return true;
             }
             // e.g. "helpful" — not a help directive; fall through for Topic?
         }
 
         // Trailing Topic? (IPython-style): whole trimmed line is Ident?
-        std::size_t end = code.size();
-        while (end > i && std::isspace(static_cast<unsigned char>(code[end - 1]))) {
-            --end;
-        }
-        if (end > i && code[end - 1] == '?') {
-            const std::string topic = code.substr(i, end - i - 1);
+        std::string trimmed = trim_ascii(line);
+        if (!trimmed.empty() && trimmed.back() == '?') {
+            const std::string topic = trimmed.substr(0, trimmed.size() - 1);
             if (!topic.empty()
                 && std::all_of(topic.begin(), topic.end(),
                                [](unsigned char c) { return is_help_ident_char(c); })) {

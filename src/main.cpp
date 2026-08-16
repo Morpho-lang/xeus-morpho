@@ -6,10 +6,9 @@
 * The full license is in the file LICENSE, distributed with this software. 
 ****************************************************************************/
 
-
-
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <utility>
 #include <signal.h>
@@ -22,6 +21,7 @@
 #endif
 
 #include "xeus/xeus_context.hpp"
+#include "xeus/xhelper.hpp"
 #include "xeus/xkernel.hpp"
 #include "xeus/xkernel_configuration.hpp"
 #include "xeus/xserver.hpp"
@@ -36,64 +36,49 @@
 void handler(int sig)
 {
     void* array[10];
-
-    // get void*'s for all entries on the stack
     size_t size = backtrace(array, 10);
-
-    // print out all the frames to stderr
     fprintf(stderr, "Error: signal %d:\n", sig);
     backtrace_symbols_fd(array, size, STDERR_FILENO);
-    exit(1);
+    _exit(1);
 }
 #endif
 
-bool should_print_version(int argc, char* argv[])
+namespace
 {
-    for (int i = 0; i < argc; ++i)
+    std::string morpho_banner()
     {
-        if (std::string(argv[i]) == "--version")
-        {
+        return " ___   ___\n"
+               "( @ \\Y/ @ )   morpho  " MORPHO_VERSIONSTRING "\n"
+               " \\__+|+__/\n"
+               "  {_/ \\_}\n";
+    }
+
+    bool launched_from_jupyter(int argc, char* argv[])
+    {
+        if (std::getenv("JPY_PARENT_PID") != nullptr) {
             return true;
         }
-    }
-    return false;
-}
-
-std::string extract_filename(int argc, char* argv[])
-{
-    std::string res = "";
-    for (int i = 0; i < argc; ++i)
-    {
-        if ((std::string(argv[i]) == "-f") && (i + 1 < argc))
-        {
-            res = argv[i + 1];
-            for (int j = i; j < argc - 2; ++j)
-            {
-                argv[j] = argv[j + 2];
+        for (int i = 0; i < argc; ++i) {
+            if (std::string(argv[i]) == "-f") {
+                return true;
             }
-            argc -= 2;
-            break;
         }
+        return false;
     }
-    return res;
 }
-
-
 
 int main(int argc, char* argv[])
 {
-    if (should_print_version(argc, argv))
+    if (xeus::should_print_version(argc, argv))
     {
-        std::clog << "xmorpho " << XEUS_MORPHO_VERSION  << std::endl;
+        std::clog << "xmorpho " << XEUS_MORPHO_VERSION << std::endl;
         return 0;
     }
 
-    // If we are called from the Jupyter launcher, silence all logging. This
-    // is important for a JupyterHub configured with cleanup_servers = False:
-    // Upon restart, spawned single-user servers keep running but without the
-    // std* streams. When a user then tries to start a new kernel, xmorpho
-    // will get a SIGPIPE and exit.
-    if (std::getenv("JPY_PARENT_PID") != NULL)
+    // Jupyter launcher / JupyterHub: std* may be closed; writing the banner
+    // would SIGPIPE. Also silence clog when JPY_PARENT_PID is set.
+    const bool quiet = launched_from_jupyter(argc, argv);
+    if (quiet)
     {
         std::clog.setstate(std::ios_base::failbit);
     }
@@ -101,23 +86,22 @@ int main(int argc, char* argv[])
     // Registering SIGSEGV handler. Leave SIGINT to xeus so interrupt does not
     // exit the kernel process.
 #ifdef __GNUC__
-    std::clog << "registering handler for SIGSEGV" << std::endl;
+    if (!quiet)
+    {
+        std::clog << "registering handler for SIGSEGV" << std::endl;
+    }
     signal(SIGSEGV, handler);
 #endif
 
     std::unique_ptr<xeus::xcontext> context = xeus::make_zmq_context();
-    
-    // Instantiating the xeus xinterpreter
-    using interpreter_ptr = std::unique_ptr<xeus_morpho::interpreter>;
-    interpreter_ptr interpreter = interpreter_ptr(new xeus_morpho::interpreter());
 
-    using history_manager_ptr = std::unique_ptr<xeus::xhistory_manager>;
-    history_manager_ptr hist = xeus::make_in_memory_history_manager();
+    auto interpreter = std::make_unique<xeus_morpho::interpreter>();
+    auto hist = xeus::make_in_memory_history_manager();
 
-    std::string connection_filename = extract_filename(argc, argv);
+    std::string connection_filename = xeus::extract_filename(argc, argv);
 
     nl::json debugger_config;
-    
+
     if (!connection_filename.empty())
     {
         xeus::xconfiguration config = xeus::load_configuration(connection_filename);
@@ -132,15 +116,13 @@ int main(int argc, char* argv[])
                              xeus::make_null_debugger,
                              debugger_config);
 
-
-        std::cout <<
-            " ___   ___\n"
-            "( @ \\Y/ @ )   morpho  " MORPHO_VERSIONSTRING "\n"
-            " \\__+|+__/\n"
-            "  {_/ \\_}\n\n"
-            "If you want to connect to this kernel from an other client, you can use"
-            " the " + connection_filename + " file."
-            << std::endl;
+        if (!quiet)
+        {
+            std::cout << morpho_banner()
+                      << "\nIf you want to connect to this kernel from an other client, you can use"
+                         " the "
+                      << connection_filename << " file." << std::endl;
+        }
 
         kernel.start();
     }
@@ -155,27 +137,11 @@ int main(int argc, char* argv[])
                              xeus::make_null_debugger,
                              debugger_config);
 
-        const auto& config = kernel.get_config();
-        std::cout <<
-            " ___   ___\n"
-            "( @ \\Y/ @ )  morpho " MORPHO_VERSIONSTRING "\n"
-            " \\__+|+__/\n"
-            "  {_/ \\_}\n\n"
-            "If you want to connect to this kernel from an other client, just copy"
-            " and paste the following content inside of a `kernel.json` file. And then run for example:\n\n"
-            "# jupyter console --existing kernel.json\n\n"
-            "kernel.json\n```\n{\n"
-            "    \"transport\": \"" + config.m_transport + "\",\n"
-            "    \"ip\": \"" + config.m_ip + "\",\n"
-            "    \"control_port\": " + config.m_control_port + ",\n"
-            "    \"shell_port\": " + config.m_shell_port + ",\n"
-            "    \"stdin_port\": " + config.m_stdin_port + ",\n"
-            "    \"iopub_port\": " + config.m_iopub_port + ",\n"
-            "    \"hb_port\": " + config.m_hb_port + ",\n"
-            "    \"signature_scheme\": \"" + config.m_signature_scheme + "\",\n"
-            "    \"key\": \"" + config.m_key + "\"\n"
-            "}\n```"
-            << std::endl;
+        if (!quiet)
+        {
+            std::cout << morpho_banner() << "\n"
+                      << xeus::get_start_message(kernel.get_config()) << std::endl;
+        }
 
         kernel.start();
     }

@@ -6,6 +6,7 @@ build/*
 # Local test venv
 .venv-test/
 .venv/
+.jupyter-test/
 **/__pycache__/
 .pytest_cache/
 
@@ -25,3 +26,4 @@ jupyterlab-morpho/tsconfig.tsbuildinfo
 jupyterlab-morpho/jupyterlab_morpho/labextension/
 jupyterlab-morpho/*.egg-info/
 jupyterlab-morpho/dist/
+jupyterlab-morpho/test/dist/

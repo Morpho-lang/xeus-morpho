@@ -1,5 +1,5 @@
 {
-  "packageManager": "jupyterlab-morpho",
+  "packageManager": "python",
   "packageName": "jupyterlab_morpho",
   "uninstallInstructions": "Use your Python package manager (pip, conda, etc.) to uninstall the package jupyterlab_morpho"
 }

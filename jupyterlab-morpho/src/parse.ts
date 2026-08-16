@@ -3,9 +3,11 @@
  * See morpho-morphoview docs/commandapi.md.
  */
 
+import { identity, multiply, type Mat4 } from './mat4';
+
 export type Vec3 = [number, number, number];
 export type Vec4 = [number, number, number, number];
-export type Mat4 = Float32Array;
+export type { Mat4 };
 
 export interface MvObject {
   id: number;
@@ -52,24 +54,6 @@ export interface MvScene {
   draws: MvDraw[];
   fonts: Map<number, MvFont>;
   title: string;
-}
-
-export function identity(): Mat4 {
-  return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-}
-
-function multiply(a: Mat4, b: Mat4): Mat4 {
-  const out = new Float32Array(16);
-  for (let c = 0; c < 4; c++) {
-    for (let r = 0; r < 4; r++) {
-      out[c * 4 + r] =
-        a[r] * b[c * 4] +
-        a[4 + r] * b[c * 4 + 1] +
-        a[8 + r] * b[c * 4 + 2] +
-        a[12 + r] * b[c * 4 + 3];
-    }
-  }
-  return out;
 }
 
 function translate(m: Mat4, t: Vec3): Mat4 {
@@ -249,6 +233,24 @@ function emptyScene(id: number, dim = 3): MvScene {
     draws: [],
     fonts: new Map(),
     title: ''
+  };
+}
+
+function resolvePendingColor(
+  pendingC: number | null | undefined,
+  colors: Map<number, Vec4>,
+  existing: MvDraw | undefined,
+  fallbackColor: Vec4 | null
+): { color: Vec4 | null; useVertexColor: boolean } {
+  if (pendingC !== undefined) {
+    if (pendingC === null) {
+      return { color: null, useVertexColor: true };
+    }
+    return { color: colors.get(pendingC) ?? [1, 1, 1, 1], useVertexColor: false };
+  }
+  return {
+    color: existing?.color ?? fallbackColor,
+    useVertexColor: existing?.useVertexColor ?? true
   };
 }
 
@@ -485,17 +487,12 @@ export function parseMorphoview(ascii: string): MvScene[] {
       }
       const sc = ensureScene();
       const existing = sc.draws.find(d => d.drawId === drawId);
-      let color = existing?.color ?? null;
-      let useVertexColor = existing?.useVertexColor ?? true;
-      if (pendingC !== undefined) {
-        if (pendingC === null) {
-          color = null;
-          useVertexColor = true;
-        } else {
-          color = colors.get(pendingC) ?? [1, 1, 1, 1];
-          useVertexColor = false;
-        }
-      }
+      const { color, useVertexColor } = resolvePendingColor(
+        pendingC,
+        colors,
+        existing,
+        null
+      );
       const draw: MvDraw = {
         drawId,
         objectId,
@@ -549,18 +546,13 @@ export function parseMorphoview(ascii: string): MvScene[] {
         text = unquote(r.next());
       }
       const font = sc.fonts.get(fontId);
-      let color: Vec4 | null = null;
-      let useVertexColor = true;
-      if (pendingC !== undefined) {
-        if (pendingC === null) {
-          color = null;
-          useVertexColor = true;
-        } else {
-          color = colors.get(pendingC) ?? [1, 1, 1, 1];
-          useVertexColor = false;
-        }
-      }
       const existing = sc.draws.find(d => d.drawId === drawId);
+      const { color, useVertexColor } = resolvePendingColor(
+        pendingC,
+        colors,
+        existing,
+        [1, 1, 1, 1]
+      );
       const draw: MvDraw = {
         drawId,
         objectId: drawId,
@@ -633,16 +625,39 @@ export function parseMorphoview(ascii: string): MvScene[] {
   return scenes;
 }
 
-export function formatStride(format: string, dim: number): number {
-  let s = 0;
+export interface FormatLayout {
+  stride: number;
+  x: number;
+  n: number;
+  c: number;
+  a: number;
+}
+
+/** Offsets of `x`/`n`/`c`/`a` in a vertex format string (morphoview render.c). */
+export function formatLayout(format: string, dim: number): FormatLayout {
+  let stride = 0;
+  let x = -1;
+  let n = -1;
+  let c = -1;
+  let a = -1;
   for (const ch of format) {
-    if (ch === 'x' || ch === 'n') {
-      s += dim;
+    if (ch === 'x') {
+      x = stride;
+      stride += dim;
+    } else if (ch === 'n') {
+      n = stride;
+      stride += dim;
     } else if (ch === 'c') {
-      s += 3;
+      c = stride;
+      stride += 3;
     } else if (ch === 'a') {
-      s += 1;
+      a = stride;
+      stride += 1;
     }
   }
-  return Math.max(s, dim);
+  return { stride: Math.max(stride, dim), x, n, c, a };
+}
+
+export function formatStride(format: string, dim: number): number {
+  return formatLayout(format, dim).stride;
 }

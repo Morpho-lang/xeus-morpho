@@ -16,41 +16,86 @@
 #include "xeus/xhelper.hpp"
 #include "xeus/xinput.hpp"
 #include "xeus/xinterpreter.hpp"
+#include "xeus/xmessage.hpp"
 
 #include "xeus-morpho/xhelp.hpp"
 #include "xeus-morpho/xinterpreter.hpp"
 #include "xeus-morpho/xjupyter.hpp"
+#include "xeus-morpho/xeus_morpho_config.hpp"
+#include "morpho_compat.hpp"
 
 namespace nl = nlohmann;
 
 namespace xeus_morpho
 {
 
-    extern "C" void xeus_morphoprintfn (vm* /*v */,
-                                        void* ref,
-                                        char* str) {
-        interpreter *thisinterpreter = (interpreter *) ref;
-        thisinterpreter->print(std::string(str));
+    extern "C" void xeus_morphoprintfn(vm* /*v */, void* ref, char* str)
+    {
+        if (ref == nullptr || str == nullptr) {
+            return;
+        }
+        static_cast<interpreter*>(ref)->print(str);
     }
 
-    extern "C" void xeus_morphowarningfn (vm* /*v */, void* ref, error* warning) {
-        interpreter *thisinterpreter = (interpreter *) ref;
-        
-        thisinterpreter->publish_stream("stderr", "Warning '" + std::string(warning->id) + "': " + std::string(warning->msg));
+    extern "C" void xeus_morphowarningfn(vm* /*v */, void* ref, error* warning)
+    {
+        if (ref == nullptr || warning == nullptr) {
+            return;
+        }
+        const char* id = warning->id != nullptr ? warning->id : "";
+        static_cast<interpreter*>(ref)->warn(
+            "Warning '" + std::string(id) + "': " + std::string(warning->msg));
     }
 
     extern "C" void xeus_morphoinputfn(vm* /*v*/, void* ref, morphoinputmode mode, varray_char* str)
     {
         // System.readline only requests LINE mode; KEYPRESS is unused by libmorpho.
-        if (mode != MORPHO_INPUT_LINE || str == nullptr) {
+        if (ref == nullptr || mode != MORPHO_INPUT_LINE || str == nullptr) {
             return;
         }
-        static_cast<interpreter*>(ref)->fill_input(str);
+        std::string line;
+        static_cast<interpreter*>(ref)->read_stdin_line(line);
+        if (!line.empty()) {
+            varray_charadd(str, &line[0], static_cast<int>(line.size()));
+        }
     }
 
-    // implemented in xcomplete.cpp
-    int complete(program *p, const std::string& code, int cursor_pos, nl::json& matches);
- 
+    int complete(const std::string& code, int cursor_pos, nl::json& matches);
+
+    namespace
+    {
+        std::string format_error_location(const error& err)
+        {
+            if (err.line == ERROR_POSNUNIDENTIFIABLE || err.posn == ERROR_POSNUNIDENTIFIABLE) {
+                return {};
+            }
+            std::ostringstream oss;
+            oss << "[line " << err.line << " char " << (err.posn + 1);
+            if (err.file != nullptr) {
+                oss << " in module '" << err.file << "'";
+            }
+            oss << "]";
+            return oss.str();
+        }
+
+        std::string format_error_line(const error& err, bool compile)
+        {
+            const char* id = err.id != nullptr ? err.id : "";
+            std::ostringstream oss;
+            if (compile) {
+                oss << "Compilation error '" << id << "'";
+                const std::string loc = format_error_location(err);
+                if (!loc.empty()) {
+                    oss << " " << loc;
+                }
+            } else {
+                oss << "Error '" << id << "'";
+            }
+            oss << ": " << err.msg;
+            return oss.str();
+        }
+    }
+
     interpreter::interpreter()
     {
         morpho_initialize();
@@ -65,12 +110,13 @@ namespace xeus_morpho
         register_jupyter_builtins(this);
 
         xeus::register_interpreter(this);
-        
+
         buffer = "";
     }
 
     interpreter::~interpreter()
     {
+        unregister_jupyter_builtins();
         // Match Morpho CLI teardown order: VM, then program, then compiler.
         morpho_freevm(morpho_vm);
         morpho_freeprogram(morpho_program);
@@ -86,125 +132,120 @@ namespace xeus_morpho
 
     void interpreter::print(const std::string& output)
     {
-        // Stream live so long runs (e.g. optimizers) show progress during the cell.
-        // Keep a copy for stack traces; do not also publish as execute_result.
-        buffer += output;
-        if (stream_prints && !output.empty()) {
+        if (!stream_prints) {
+            buffer += output;
+            return;
+        }
+        if (!m_silent && !output.empty()) {
             publish_stream("stdout", output);
+        }
+    }
+
+    void interpreter::warn(const std::string& message)
+    {
+        if (!m_silent && !message.empty()) {
+            publish_stream("stderr", message);
         }
     }
 
     void interpreter::display_morphoview(const std::string& ascii)
     {
+        if (m_silent) {
+            return;
+        }
         nl::json data;
         data[MORPHOVIEW_MIME] = ascii;
         data["text/plain"] = "[morphoview graphics]";
-        // xeus 5: display_data (was publish_display_data in older xeus)
         display_data(std::move(data), nl::json::object(), nl::json::object());
     }
 
-    void interpreter::fill_input(varray_char* str)
+    void interpreter::read_stdin_line(std::string& line)
     {
-        // Prints are already streamed live; just wait for stdin.
-        std::string line = xeus::blocking_input_request("", /*password=*/false);
+        line.clear();
+        if (!m_allow_stdin) {
+            return;
+        }
+        line = xeus::blocking_input_request("", /*password=*/false);
         while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
             line.pop_back();
-        }
-        if (!line.empty()) {
-            varray_charadd(str, &line[0], static_cast<int>(line.size()));
         }
     }
 
     void interpreter::execute_request_impl(send_reply_callback cb,
                                            int execution_count,
                                            const std::string& code,
-                                           xeus::execute_request_config /*config*/,
+                                           xeus::execute_request_config config,
                                            nl::json /*user_expressions*/)
     {
-        nl::json kernel_res;
+        m_silent = config.silent;
+        m_allow_stdin = config.allow_stdin;
 
-        kernel_res["payload"] = nl::json::array();
-        kernel_res["user_expressions"] = nl::json::object();
-        kernel_res["status"] = "ok";
-
-        // CLI-style help / ? — publish markdown in-place, do not compile.
         std::string help_query;
         if (parse_help_directive(code, help_query)) {
-            nl::json pub_data;
+            std::string markdown;
+            std::string plain;
+            const std::string topic = help_query.empty() ? std::string("help") : help_query;
+            lookup_help(topic, markdown, plain);
             if (help_query.empty()) {
-                pub_data["text/plain"] = "Usage: help <topic> or ? <topic>";
-            } else {
-                std::string markdown;
-                std::string plain;
-                lookup_help(help_query, markdown, plain);
+                append_toplevel_topics(markdown, plain);
+            }
+            if (!m_silent) {
+                nl::json pub_data;
                 if (!markdown.empty()) {
                     pub_data["text/markdown"] = markdown;
                 }
                 pub_data["text/plain"] = plain.empty() ? markdown : plain;
+                publish_execution_result(execution_count, std::move(pub_data), nl::json::object());
             }
-            publish_execution_result(execution_count, std::move(pub_data), nl::json::object());
-            cb(kernel_res);
+            cb(xeus::create_successful_reply());
             return;
         }
-        
-        error err; // Error structure that received messages from the compiler and VM
+
+        error err;
         error_init(&err);
 
-        // Compile code 
-        bool success=morpho_compile((char *) code.c_str(), morpho_compiler, false, &err);
-        
+        bool success = morpho_compile(const_cast<char*>(code.c_str()), morpho_compiler, false, &err);
+
         if (success) {
             reset();
-            
-            success=morpho_run(morpho_vm, morpho_program);
 
-            // Now process the output 
+            success = morpho_run(morpho_vm, morpho_program);
+
             if (success) {
-                // Print output was already streamed to stdout during the run.
-                kernel_res["status"] = "ok";
-                kernel_res["user_expressions"] = nl::json::object();
+                cb(xeus::create_successful_reply());
             } else {
-                err=*morpho_geterror(morpho_vm);
+                err = *morpho_geterror(morpho_vm);
 
-                std::string id(err.id); // Extract the error id and message
-                std::string msg(err.msg);
+                const std::string id = err.id != nullptr ? err.id : "";
+                const std::string msg = err.msg;
 
                 reset();
                 stream_prints = false;
                 morpho_stacktrace(morpho_vm);
                 stream_prints = true;
-                
-                // Convert stacktrace into string vector
-                std::vector<std::string> stacktrace({"Error '" + id + "': " + msg});
+
+                std::vector<std::string> stacktrace({format_error_line(err, false)});
                 std::istringstream iss(buffer);
                 std::string line;
-
-                while (std::getline(iss, line)) { // Split the output of morpho_stacktrace
+                while (std::getline(iss, line)) {
                     stacktrace.push_back(line);
                 }
-                
-                kernel_res["status"] = "error";
-                kernel_res["ename"] = id;
-                kernel_res["evalue"] = msg;
-                kernel_res["traceback"] = stacktrace;
-                
-                publish_execution_error(id, msg, stacktrace);
+
+                if (!m_silent) {
+                    publish_execution_error(id, msg, stacktrace);
+                }
+                cb(xeus::create_error_reply(id, msg, stacktrace));
             }
         } else {
-            std::string id(err.id);
-            std::string msg(err.msg);
+            const std::string id = err.id != nullptr ? err.id : "";
+            const std::string msg = err.msg;
+            std::vector<std::string> stacktrace({format_error_line(err, true)});
 
-            std::vector<std::string> stacktrace({"Compilation error '" + id + "': " + msg});
-
-            kernel_res["status"] = "error";
-            kernel_res["ename"] = id;
-            kernel_res["evalue"] = msg;
-            kernel_res["traceback"] = stacktrace;
-
-            publish_execution_error(id, msg, stacktrace);
+            if (!m_silent) {
+                publish_execution_error(id, msg, stacktrace);
+            }
+            cb(xeus::create_error_reply(id, msg, stacktrace));
         }
-        
-        cb(kernel_res);
     }
 
     void interpreter::configure_impl()
@@ -244,26 +285,16 @@ namespace xeus_morpho
         return xeus::create_is_complete_reply("complete");
     }
 
-    nl::json interpreter::complete_request_impl(const std::string&  code,
-                                                     int cursor_pos)
+    nl::json interpreter::complete_request_impl(const std::string& code, int cursor_pos)
     {
         nl::json matches = nl::json::array();
-
-        int cursor_start = complete(morpho_program, code, cursor_pos, matches);
-        
-        nl::json result;
-        result["status"] = "ok";
-        result["matches"] = matches;
-        result["cursor_start"] = cursor_start;
-        result["metadata"] = nl::json::object();
-        result["cursor_end"] = cursor_pos;
-
-        return result;
+        int cursor_start = complete(code, cursor_pos, matches);
+        return xeus::create_complete_reply(matches, cursor_start, cursor_pos);
     }
 
     nl::json interpreter::inspect_request_impl(const std::string& code,
-                                                      int cursor_pos,
-                                                      int /*detail_level*/)
+                                               int cursor_pos,
+                                               int /*detail_level*/)
     {
         const std::string query = extract_help_query(code, cursor_pos);
         if (query.empty()) {
@@ -272,34 +303,39 @@ namespace xeus_morpho
 
         std::string markdown;
         std::string plain;
-        if (!lookup_help(query, markdown, plain)) {
+        const bool found = lookup_help(query, markdown, plain);
+        if (!found && markdown.empty() && plain.empty()) {
             return xeus::create_inspect_reply(false);
         }
 
         nl::json data;
-        data["text/markdown"] = markdown;
+        if (!markdown.empty()) {
+            data["text/markdown"] = markdown;
+        }
         data["text/plain"] = plain.empty() ? markdown : plain;
         return xeus::create_inspect_reply(true, data, nl::json::object());
     }
 
-    void interpreter::shutdown_request_impl() {
-        std::cout << "Bye!!" << std::endl;
+    void interpreter::shutdown_request_impl()
+    {
     }
 
     nl::json interpreter::kernel_info_request_impl()
     {
-        nl::json result;
-        result["implementation"] = "xmorpho";
-        result["implementation_version"] = XEUS_MORPHO_VERSION;
-        result["banner"] = "xmorpho";
-        result["language_info"]["name"] = "morpho";
-        result["language_info"]["version"] = MORPHO_VERSIONSTRING;
-        result["language_info"]["mimetype"] = "text/x-morpho";
-        result["language_info"]["file_extension"] = ".morpho";
-        result["language_info"]["codemirror_mode"] = "morpho";
-        result["language_info"]["pygments_lexer"] = "text";
-        result["status"] = "ok";
-        return result;
+        return xeus::create_info_reply(
+            xeus::get_protocol_version(),
+            "xmorpho",
+            XEUS_MORPHO_VERSION,
+            "morpho",
+            MORPHO_VERSIONSTRING,
+            "text/x-morpho",
+            ".morpho",
+            "text",
+            "morpho",
+            "",
+            "xmorpho",
+            false,
+            nl::json::array());
     }
 
 }

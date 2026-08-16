@@ -9,15 +9,18 @@
 #include <cctype>
 #include <set>
 #include <string>
-#include <vector>
 
 #include "nlohmann/json.hpp"
 
-extern "C"
-{
-    #include <morpho.h>
-    #include <help.h>
-    #include <strng.h>
+#include "xeus-morpho/xhelp.hpp"
+
+extern "C" {
+#include <morpho.h>
+#include <help.h>
+#include <strng.h>
+#include <lex.h>
+    extern tokendefn standardtokens[];
+    extern int nstandardtokens;
 }
 
 namespace nl = nlohmann;
@@ -45,7 +48,33 @@ namespace xeus_morpho
             return true;
         }
 
-        void append_help_topic_matches(const std::string& to_match, nl::json& matches, std::set<std::string>& seen)
+        bool is_ident_token(const char* s)
+        {
+            if (s == nullptr || s[0] == '\0') {
+                return false;
+            }
+            unsigned char c = static_cast<unsigned char>(s[0]);
+            return std::isalpha(c) != 0 || c == '_';
+        }
+
+        void append_keyword_matches(const std::string& to_match, nl::json& matches,
+                                    std::set<std::string>& seen)
+        {
+            const int n = nstandardtokens;
+            for (int i = 0; i < n; ++i) {
+                const char* tok = standardtokens[i].string;
+                if (!is_ident_token(tok)) {
+                    continue;
+                }
+                const std::string name(tok);
+                if (startswith(name, to_match) && seen.insert(name).second) {
+                    matches.push_back(name);
+                }
+            }
+        }
+
+        void append_help_topic_matches(const std::string& to_match, nl::json& matches,
+                                       std::set<std::string>& seen)
         {
             varray_value topics;
             varray_valueinit(&topics);
@@ -67,43 +96,22 @@ namespace xeus_morpho
         }
     }
     
-    int complete(program* /*p*/, const std::string& code, int cursor_pos, nl::json& matches)
+    int complete(const std::string& code, int cursor_pos, nl::json& matches)
     {
-        // Keep in sync with morpho-cli cli_complete (cli.c words[]).
-        static const std::vector<std::string> keywords = {
-            "as", "and", "break", "catch", "class", "continue", "do", "else",
-            "false", "fn", "for", "help", "if", "import", "in", "is", "nil",
-            "or", "print", "quit", "return", "self", "super", "true", "try",
-            "var", "while", "with"
-        };
-
-        // Jupyter cursor_pos is in [0, code.size()]. Scan only characters before the cursor.
-        if (cursor_pos < 0) {
-            cursor_pos = 0;
-        }
-        if (static_cast<std::size_t>(cursor_pos) > code.size()) {
-            cursor_pos = static_cast<int>(code.size());
+        // Jupyter cursor_pos is in Unicode code points.
+        const std::size_t cursor_byte = utf8_codepoint_index_to_byte(code, cursor_pos);
+        std::size_t start_byte = cursor_byte;
+        while (start_byte > 0 && !std::isspace(static_cast<unsigned char>(code[start_byte - 1]))) {
+            --start_byte;
         }
 
-        int cursor_start = cursor_pos;
-        while (cursor_start > 0 && !std::isspace(static_cast<unsigned char>(code[cursor_start - 1]))) {
-            --cursor_start;
-        }
-
-        if (cursor_pos > cursor_start) {
-            const std::string to_match = code.substr(
-                static_cast<std::size_t>(cursor_start),
-                static_cast<std::size_t>(cursor_pos - cursor_start));
-
+        if (cursor_byte > start_byte) {
+            const std::string to_match = code.substr(start_byte, cursor_byte - start_byte);
             std::set<std::string> seen;
-            for (const auto& kw : keywords) {
-                if (startswith(kw, to_match) && seen.insert(kw).second) {
-                    matches.push_back(kw);
-                }
-            }
+            append_keyword_matches(to_match, matches, seen);
             append_help_topic_matches(to_match, matches, seen);
         }
 
-        return cursor_start;
+        return utf8_byte_index_to_codepoint(code, start_byte);
     }
 }

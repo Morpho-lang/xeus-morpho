@@ -18,6 +18,8 @@ namespace xeus_morpho
 
     /** Register Morpho builtins that publish Jupyter display_data. */
     void register_jupyter_builtins(interpreter* interp);
+    /** Drop the process-global interpreter pointer (call from destructor). */
+    void unregister_jupyter_builtins();
 }
 
 #endif

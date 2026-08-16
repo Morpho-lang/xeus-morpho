@@ -11,8 +11,6 @@
 #include "xeus-morpho/xinterpreter.hpp"
 #include "xeus-morpho/xjupyter.hpp"
 
-#include <morpho.h>
-
 extern "C" {
 #include <builtin.h>
 #include <strng.h>
@@ -51,5 +49,10 @@ namespace xeus_morpho
         g_interpreter = interp;
         morpho_defineerror(jupyter_display_args_id, ERROR_HALT, jupyter_display_args_msg);
         builtin_addfunction(jupyter_display_name, JupyterDisplay, MORPHO_FN_IO);
+    }
+
+    void unregister_jupyter_builtins()
+    {
+        g_interpreter = nullptr;
     }
 }

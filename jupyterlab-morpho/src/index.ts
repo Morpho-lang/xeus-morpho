@@ -11,7 +11,7 @@ import { IRenderMimeRegistry } from '@jupyterlab/rendermime';
 import { LanguageSupport } from '@codemirror/language';
 
 import { morpho } from './language';
-import { rendererFactory, MORPHOVIEW_MIME } from './mime';
+import { rendererFactory } from './mime';
 
 const languagePlugin: JupyterFrontEndPlugin<void> = {
   id: 'jupyterlab-morpho:plugin',
@@ -36,8 +36,6 @@ const mimePlugin: JupyterFrontEndPlugin<void> = {
   requires: [IRenderMimeRegistry],
   activate: (_app: JupyterFrontEnd, rendermime: IRenderMimeRegistry) => {
     rendermime.addFactory(rendererFactory);
-    // Ensure preferred order for our MIME
-    void MORPHOVIEW_MIME;
   }
 };
 

@@ -9,12 +9,21 @@
 #ifndef XEUS_MORPHO_XHELP_HPP
 #define XEUS_MORPHO_XHELP_HPP
 
+#include <cstddef>
 #include <string>
 
 namespace xeus_morpho
 {
-    /** Token under the cursor for help lookup ([A-Za-z0-9_.]). */
+    /** Jupyter cursor_pos is Unicode code points; Morpho sources are UTF-8 bytes. */
+    std::size_t utf8_codepoint_index_to_byte(const std::string& s, int cursor_pos);
+    int utf8_byte_index_to_codepoint(const std::string& s, std::size_t byte_index);
+
+    /** Token under the cursor for help lookup ([A-Za-z0-9_.]).
+     *  cursor_pos is a Jupyter Unicode code-point index. */
     std::string extract_help_query(const std::string& code, int cursor_pos);
+
+    /** Append Morpho's top-level help topic names (CLI blank-help list). */
+    void append_toplevel_topics(std::string& markdown, std::string& plain);
 
     /**
      * Look up Morpho help for query.

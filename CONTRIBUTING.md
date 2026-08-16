@@ -21,7 +21,7 @@ First, you need to fork the project. Then setup your environment:
 
 ```bash
 # create a new conda environment
-conda create -f environment-dev.yml
+conda env create -f environment-dev.yml
 conda activate xeus-morpho
 
 # download xeus-morpho from your GitHub fork
@@ -58,4 +58,11 @@ cd test
 pytest . -vv
 ```
 
-The suite uses `jupyter_kernel_test` to exercise execute, help/`?`, completion, `is_complete`, inspect, and stdin (`System.readline`).
+The suite uses `jupyter_kernel_test` to exercise execute, help/`?`, completion, `is_complete`, inspect, stdin (`System.readline`), silent execute, and morphoview `display_data`.
+
+Parser tests for the Lab MIME renderer:
+
+```bash
+cd jupyterlab-morpho
+jlpm test
+```

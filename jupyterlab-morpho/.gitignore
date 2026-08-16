@@ -4,3 +4,4 @@ tsconfig.tsbuildinfo
 *.tsbuildinfo
 jupyterlab_morpho/labextension/
 .yarn/
+test/dist/

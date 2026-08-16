@@ -14,6 +14,7 @@ import {
 
 type MorphoState = {
   tokenize: ((stream: StringStream, state: MorphoState) => string | null) | null;
+  commentLevel: number;
 };
 
 /** Minimal stream interface matching CodeMirror StringStream. */
@@ -36,12 +37,27 @@ interface StringStream {
 
 function tokenComment(stream: StringStream, state: MorphoState): string {
   let maybeEnd = false;
+  let maybeStart = false;
   let ch: string | undefined;
   while ((ch = stream.next()) != null) {
-    if (maybeEnd && ch === '/') {
-      state.tokenize = null;
-      break;
+    if (maybeStart && ch === '*') {
+      state.commentLevel++;
+      maybeStart = false;
+      maybeEnd = false;
+      continue;
     }
+    if (maybeEnd && ch === '/') {
+      state.commentLevel--;
+      if (state.commentLevel <= 0) {
+        state.tokenize = null;
+        state.commentLevel = 0;
+        break;
+      }
+      maybeStart = false;
+      maybeEnd = false;
+      continue;
+    }
+    maybeStart = ch === '/';
     maybeEnd = ch === '*';
   }
   return 'comment';
@@ -95,6 +111,7 @@ function tokenBase(stream: StringStream, state: MorphoState): string | null {
 
   // Block comment
   if (ch === '/' && stream.eat('*')) {
+    state.commentLevel = 1;
     state.tokenize = tokenComment;
     return tokenComment(stream, state);
   }
@@ -168,7 +185,7 @@ function tokenBase(stream: StringStream, state: MorphoState): string | null {
 export const morphoStreamParser = {
   name: 'morpho',
   startState(): MorphoState {
-    return { tokenize: null };
+    return { tokenize: null, commentLevel: 0 };
   },
   token(stream: StringStream, state: MorphoState): string | null {
     if (state.tokenize) {

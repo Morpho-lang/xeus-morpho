@@ -8,9 +8,9 @@ import {
   MvObject,
   Vec3,
   Vec4,
-  formatStride,
-  identity
+  formatLayout
 } from './parse';
+import { identity, mulMat4 } from './mat4';
 
 const VS = `
 attribute vec3 aPosition;
@@ -53,6 +53,10 @@ void main() {
     return;
   }
   vec3 N = normalize(vNormal);
+  // morphoview: two-sided lighting (transparent back-face pass).
+  if (!gl_FrontFacing) {
+    N = -N;
+  }
   vec3 L = normalize(uLightPos - vPos);
   vec3 V = normalize(uEye - vPos);
   vec3 R = reflect(-L, N);
@@ -85,23 +89,15 @@ function link(
   gl.attachShader(p, fs);
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-    throw new Error(gl.getProgramInfoLog(p) || 'link error');
+    const log = gl.getProgramInfoLog(p) || 'link error';
+    gl.deleteProgram(p);
+    throw new Error(log);
   }
+  gl.detachShader(p, vs);
+  gl.detachShader(p, fs);
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
   return p;
-}
-
-function mulMat4(a: Float32Array, b: Float32Array): Float32Array {
-  const out = new Float32Array(16);
-  for (let c = 0; c < 4; c++) {
-    for (let r = 0; r < 4; r++) {
-      out[c * 4 + r] =
-        a[r] * b[c * 4] +
-        a[4 + r] * b[c * 4 + 1] +
-        a[8 + r] * b[c * 4 + 2] +
-        a[12 + r] * b[c * 4 + 3];
-    }
-  }
-  return out;
 }
 
 /** Symmetric orthographic projection — matches morphoview mat3d_ortho for ±bounds. */
@@ -196,7 +192,6 @@ function invertMat4(m: Float32Array): Float32Array {
 }
 
 function normalMatrix(model: Float32Array): Float32Array {
-  // Inverse-transpose of upper 3x3 (assume similarity / uniform-ish scale)
   const a00 = model[0];
   const a01 = model[1];
   const a02 = model[2];
@@ -224,12 +219,44 @@ function normalMatrix(model: Float32Array): Float32Array {
   ]);
 }
 
+function transformPoint(m: Float32Array, x: number, y: number, z: number): Vec3 {
+  return [
+    m[0] * x + m[4] * y + m[8] * z + m[12],
+    m[1] * x + m[5] * y + m[9] * z + m[13],
+    m[2] * x + m[6] * y + m[10] * z + m[14]
+  ];
+}
+
+function readVec3(verts: number[], offset: number, dim: number, fallbackZ = 0): Vec3 {
+  return [
+    verts[offset] || 0,
+    dim > 1 ? verts[offset + 1] || 0 : 0,
+    dim > 2 ? verts[offset + 2] || 0 : fallbackZ
+  ];
+}
+
 interface MeshData {
   positions: Float32Array;
   normals: Float32Array;
   colors: Float32Array;
   indices: Uint32Array;
-  mode: number; // gl.TRIANGLES / LINES / POINTS
+  mode: number;
+}
+
+interface GpuMesh {
+  pos: WebGLBuffer;
+  nrm: WebGLBuffer;
+  col: WebGLBuffer;
+  idx: WebGLBuffer;
+  count: number;
+  mode: number;
+  indexType: number;
+}
+
+interface GpuText {
+  texture: WebGLTexture;
+  pos: WebGLBuffer;
+  uv: WebGLBuffer;
 }
 
 /**
@@ -237,72 +264,38 @@ interface MeshData {
  * Same as morphoview render_orient_facets — required for transparent back/front cull.
  */
 function orientFacets(obj: MvObject, dim: number, facets: number[]): number[] {
-  if (!obj.format.includes('n') || !obj.format.includes('x') || facets.length < 3) {
+  const layout = formatLayout(obj.format, dim);
+  if (layout.x < 0 || layout.n < 0 || facets.length < 3) {
     return facets;
   }
-  const stride = formatStride(obj.format, dim);
-  let xpos = -1;
-  let npos = -1;
-  let pos = 0;
-  for (const ch of obj.format) {
-    if (ch === 'x') {
-      xpos = pos;
-      pos += dim;
-    } else if (ch === 'n') {
-      npos = pos;
-      pos += dim;
-    } else if (ch === 'c') {
-      pos += 3;
-    } else if (ch === 'a') {
-      pos += 1;
-    }
-  }
-  if (xpos < 0 || npos < 0) {
-    return facets;
-  }
+  const stride = layout.stride;
+  const xpos = layout.x;
+  const npos = layout.n;
 
   const out = facets.slice();
   for (let t = 0; t + 2 < out.length; t += 3) {
     const i0 = out[t];
     const i1 = out[t + 1];
     const i2 = out[t + 2];
-    const p0 = i0 * stride + xpos;
-    const p1 = i1 * stride + xpos;
-    const p2 = i2 * stride + xpos;
-    const n0 = i0 * stride + npos;
-    const n1 = i1 * stride + npos;
-    const n2 = i2 * stride + npos;
-    const p0x = obj.vertices[p0] || 0;
-    const p0y = dim > 1 ? obj.vertices[p0 + 1] || 0 : 0;
-    const p0z = dim > 2 ? obj.vertices[p0 + 2] || 0 : 0;
-    const p1x = obj.vertices[p1] || 0;
-    const p1y = dim > 1 ? obj.vertices[p1 + 1] || 0 : 0;
-    const p1z = dim > 2 ? obj.vertices[p1 + 2] || 0 : 0;
-    const p2x = obj.vertices[p2] || 0;
-    const p2y = dim > 1 ? obj.vertices[p2 + 1] || 0 : 0;
-    const p2z = dim > 2 ? obj.vertices[p2 + 2] || 0 : 0;
-    const n0x = obj.vertices[n0] || 0;
-    const n0y = dim > 1 ? obj.vertices[n0 + 1] || 0 : 0;
-    const n0z = dim > 2 ? obj.vertices[n0 + 2] || 0 : 0;
-    const n1x = obj.vertices[n1] || 0;
-    const n1y = dim > 1 ? obj.vertices[n1 + 1] || 0 : 0;
-    const n1z = dim > 2 ? obj.vertices[n1 + 2] || 0 : 0;
-    const n2x = obj.vertices[n2] || 0;
-    const n2y = dim > 1 ? obj.vertices[n2 + 1] || 0 : 0;
-    const n2z = dim > 2 ? obj.vertices[n2 + 2] || 0 : 0;
+    const p0 = readVec3(obj.vertices, i0 * stride + xpos, dim);
+    const p1 = readVec3(obj.vertices, i1 * stride + xpos, dim);
+    const p2 = readVec3(obj.vertices, i2 * stride + xpos, dim);
+    const n0 = readVec3(obj.vertices, i0 * stride + npos, dim);
+    const n1 = readVec3(obj.vertices, i1 * stride + npos, dim);
+    const n2 = readVec3(obj.vertices, i2 * stride + npos, dim);
 
-    const e1x = p1x - p0x;
-    const e1y = p1y - p0y;
-    const e1z = p1z - p0z;
-    const e2x = p2x - p0x;
-    const e2y = p2y - p0y;
-    const e2z = p2z - p0z;
+    const e1x = p1[0] - p0[0];
+    const e1y = p1[1] - p0[1];
+    const e1z = p1[2] - p0[2];
+    const e2x = p2[0] - p0[0];
+    const e2y = p2[1] - p0[1];
+    const e2z = p2[2] - p0[2];
     const gx = e1y * e2z - e1z * e2y;
     const gy = e1z * e2x - e1x * e2z;
     const gz = e1x * e2y - e1y * e2x;
-    const nx = n0x + n1x + n2x;
-    const ny = n0y + n1y + n2y;
-    const nz = n0z + n1z + n2z;
+    const nx = n0[0] + n1[0] + n2[0];
+    const ny = n0[1] + n1[1] + n2[1];
+    const nz = n0[2] + n1[2] + n2[2];
     if (gx * nx + gy * ny + gz * nz < 0) {
       out[t + 1] = i2;
       out[t + 2] = i1;
@@ -322,17 +315,16 @@ function expandObject(
   if (!indexList.length || !obj.vertices.length) {
     return null;
   }
-  const stride = formatStride(obj.format, dim);
+  const layout = formatLayout(obj.format, dim);
+  const stride = layout.stride;
   const nVert = Math.floor(obj.vertices.length / stride);
   if (nVert < 1) {
     return null;
   }
 
   const indices = isTriangles ? orientFacets(obj, dim, indexList) : indexList;
-
-  const hasN = obj.format.includes('n');
-  const hasC = obj.format.includes('c');
-  const hasA = obj.format.includes('a');
+  const hasC = layout.c >= 0;
+  const hasA = layout.a >= 0;
 
   const positions: number[] = [];
   const normals: number[] = [];
@@ -340,32 +332,24 @@ function expandObject(
 
   for (let vi = 0; vi < nVert; vi++) {
     const base = vi * stride;
-    let o = 0;
-    const px = obj.vertices[base + o] || 0;
-    const py = dim > 1 ? obj.vertices[base + o + 1] || 0 : 0;
-    const pz = dim > 2 ? obj.vertices[base + o + 2] || 0 : 0;
-    o += dim;
-    let nx = 0;
-    let ny = 0;
-    let nz = 1;
-    if (hasN) {
-      nx = obj.vertices[base + o] || 0;
-      ny = dim > 1 ? obj.vertices[base + o + 1] || 0 : 0;
-      nz = dim > 2 ? obj.vertices[base + o + 2] || 0 : 1;
-      o += dim;
-    }
+    const p =
+      layout.x >= 0 ? readVec3(obj.vertices, base + layout.x, dim) : ([0, 0, 0] as Vec3);
+    const nrm =
+      layout.n >= 0
+        ? readVec3(obj.vertices, base + layout.n, dim, 1)
+        : ([0, 0, 1] as Vec3);
+
     let cr = 1;
     let cg = 1;
     let cb = 1;
     let ca = 1;
     if (hasC) {
-      cr = obj.vertices[base + o] || 0;
-      cg = obj.vertices[base + o + 1] || 0;
-      cb = obj.vertices[base + o + 2] || 0;
-      o += 3;
+      cr = obj.vertices[base + layout.c] || 0;
+      cg = obj.vertices[base + layout.c + 1] || 0;
+      cb = obj.vertices[base + layout.c + 2] || 0;
     }
     if (hasA) {
-      ca = obj.vertices[base + o] ?? 1;
+      ca = obj.vertices[base + layout.a] ?? 1;
     }
     if (!draw.useVertexColor && draw.color) {
       cr = draw.color[0];
@@ -381,17 +365,13 @@ function expandObject(
       cr = cg = cb = 1;
       ca = 1;
     }
-    // Uniform override still allows vertex alpha when format has a and color override is RGB from C
+    // Uniform RGB override keeps vertex alpha when format has `a` (morphoview).
     if (!draw.useVertexColor && draw.color && hasA) {
-      // morphoview: C RGB override keeps vertex a — approximate by keeping ca from vertex
-      ca =
-        obj.vertices[
-          base + (hasC ? dim + (hasN ? dim : 0) + 3 : dim + (hasN ? dim : 0))
-        ] ?? draw.color[3];
+      ca = obj.vertices[base + layout.a] ?? draw.color[3];
     }
 
-    positions.push(px, py, pz);
-    normals.push(nx, ny, nz);
+    positions.push(p[0], p[1], p[2]);
+    normals.push(nrm[0], nrm[1], nrm[2]);
     colors.push(cr, cg, cb, ca);
   }
 
@@ -435,11 +415,6 @@ function nextPow2(n: number): number {
   return Math.max(p, 2);
 }
 
-/**
- * Match morphoview text sizing (scene.c / text.h):
- *   size is in points; raster at 720 DPI → sizepx = size * 10
- *   world = FreeType pixels * TEXT_WORLD_SCALE (1/720)
- */
 const TEXT_DPI = 720;
 const TEXT_WORLD_SCALE = 1 / TEXT_DPI;
 
@@ -459,7 +434,6 @@ function rasterizeText(
   const pad = 4;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { alpha: true })!;
-  // Host .ttf paths from morphoview are unavailable in-browser.
   const sizePx = Math.max(8, Math.round((fontSizePt / 72) * TEXT_DPI));
   const font = `${sizePx}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
   ctx.font = font;
@@ -478,19 +452,16 @@ function rasterizeText(
   const textH = Math.max(2, ascent + descent + pad * 2);
   canvas.width = nextPow2(textW);
   canvas.height = nextPow2(textH);
-  // Re-set after resize (canvas reset clears state).
   ctx.font = font;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = '#ffffff';
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
-  // Baseline at pad+ascent so the full glyph fits in [0, textH).
   ctx.fillText(text, pad, pad + ascent);
 
   const texture = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
-  // No Y flip: canvas row 0 (top) → texture v=0. UVs map top of quad → low v.
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -498,7 +469,6 @@ function rasterizeText(
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
 
-  // Baseline at y=0 (morphoview): top of texture above baseline, bottom below.
   const yTop = (pad + ascent) * TEXT_WORLD_SCALE;
   const yBottom = yTop - textH * TEXT_WORLD_SCALE;
   return {
@@ -561,18 +531,15 @@ function sceneBounds(scene: MvScene): {
     if (!obj) {
       continue;
     }
-    const stride = formatStride(obj.format, dim);
-    const nVert = Math.floor(obj.vertices.length / stride);
+    const layout = formatLayout(obj.format, dim);
+    if (layout.x < 0) {
+      continue;
+    }
+    const nVert = Math.floor(obj.vertices.length / layout.stride);
     for (let vi = 0; vi < nVert; vi++) {
-      const base = vi * stride;
-      const x = obj.vertices[base] || 0;
-      const y = dim > 1 ? obj.vertices[base + 1] || 0 : 0;
-      const z = dim > 2 ? obj.vertices[base + 2] || 0 : 0;
-      includePoint(
-        m[0] * x + m[4] * y + m[8] * z + m[12],
-        m[1] * x + m[5] * y + m[9] * z + m[13],
-        m[2] * x + m[6] * y + m[10] * z + m[14]
-      );
+      const p = readVec3(obj.vertices, vi * layout.stride + layout.x, dim);
+      const w = transformPoint(m, p[0], p[1], p[2]);
+      includePoint(w[0], w[1], w[2]);
     }
   }
 
@@ -582,10 +549,12 @@ function sceneBounds(scene: MvScene): {
   return pack(min, max);
 }
 
-/** Local-space AABB centroid of object positions (morphoview render_object_centroid). */
 function objectLocalCentroid(obj: MvObject, dim: number): Vec3 {
-  const stride = formatStride(obj.format, dim);
-  const nVert = Math.floor(obj.vertices.length / stride);
+  const layout = formatLayout(obj.format, dim);
+  if (layout.x < 0) {
+    return [0, 0, 0];
+  }
+  const nVert = Math.floor(obj.vertices.length / layout.stride);
   if (nVert < 1) {
     return [0, 0, 0];
   }
@@ -596,29 +565,20 @@ function objectLocalCentroid(obj: MvObject, dim: number): Vec3 {
   let maxY = -Infinity;
   let maxZ = -Infinity;
   for (let vi = 0; vi < nVert; vi++) {
-    const base = vi * stride;
-    const x = obj.vertices[base] || 0;
-    const y = dim > 1 ? obj.vertices[base + 1] || 0 : 0;
-    const z = dim > 2 ? obj.vertices[base + 2] || 0 : 0;
-    minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x);
-    minY = Math.min(minY, y);
-    maxY = Math.max(maxY, y);
-    minZ = Math.min(minZ, z);
-    maxZ = Math.max(maxZ, z);
+    const p = readVec3(obj.vertices, vi * layout.stride + layout.x, dim);
+    minX = Math.min(minX, p[0]);
+    maxX = Math.max(maxX, p[0]);
+    minY = Math.min(minY, p[1]);
+    maxY = Math.max(maxY, p[1]);
+    minZ = Math.min(minZ, p[2]);
+    maxZ = Math.max(maxZ, p[2]);
   }
   return [0.5 * (minX + maxX), 0.5 * (minY + maxY), 0.5 * (minZ + maxZ)];
 }
 
-/** View-space z of model*local (column-major); morphoview render_view_depth. */
 function viewDepth(view: Float32Array, model: Float32Array, local: Vec3): number {
-  const wx =
-    model[0] * local[0] + model[4] * local[1] + model[8] * local[2] + model[12];
-  const wy =
-    model[1] * local[0] + model[5] * local[1] + model[9] * local[2] + model[13];
-  const wz =
-    model[2] * local[0] + model[6] * local[1] + model[10] * local[2] + model[14];
-  return view[2] * wx + view[6] * wy + view[10] * wz + view[14];
+  const w = transformPoint(model, local[0], local[1], local[2]);
+  return view[2] * w[0] + view[6] * w[1] + view[10] * w[2] + view[14];
 }
 
 function isTransparentDraw(draw: MvDraw, obj: MvObject | undefined): boolean {
@@ -631,6 +591,9 @@ function isTransparentDraw(draw: MvDraw, obj: MvObject | undefined): boolean {
   return false;
 }
 
+const INTERACT_HINT =
+  'Click to interact · drag to orbit · scroll to zoom · Tab to reset view';
+
 export class MorphoviewGL {
   private gl: WebGLRenderingContext;
   private program: WebGLProgram;
@@ -639,10 +602,8 @@ export class MorphoviewGL {
   private attribs: Record<string, number>;
   private textLocs: Record<string, WebGLUniformLocation | null>;
   private textAttribs: Record<string, number>;
-  // Match morphoview's fitted home view: look along +Z at the scene center.
   private yaw = 0;
   private pitch = 0;
-  /** Uniform view scale (morphoview display_fit / scroll zoom). */
   private viewScale = 1;
   private homeScale = 1;
   private orthoNear = -2;
@@ -653,6 +614,9 @@ export class MorphoviewGL {
   private interactive = false;
   private scene: MvScene | null = null;
   private raf = 0;
+  private uint32Indices: boolean;
+  private meshCache = new Map<number, GpuMesh[]>();
+  private textCache = new Map<number, GpuText>();
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext('webgl', { antialias: true, alpha: false });
@@ -660,6 +624,7 @@ export class MorphoviewGL {
       throw new Error('WebGL not available');
     }
     this.gl = gl;
+    this.uint32Indices = gl.getExtension('OES_element_index_uint') !== null;
     const vs = compile(gl, gl.VERTEX_SHADER, VS);
     const fs = compile(gl, gl.FRAGMENT_SHADER, FS);
     this.program = link(gl, vs, fs);
@@ -698,71 +663,83 @@ export class MorphoviewGL {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    // Click-to-interact so notebook scrolling is not captured by the canvas.
     canvas.tabIndex = 0;
     canvas.style.outline = 'none';
-    canvas.title = 'Click to interact · drag to orbit · scroll to zoom · Tab to reset view';
+    canvas.title = INTERACT_HINT;
 
-    canvas.addEventListener('pointerdown', e => {
-      if (e.button !== 0) {
-        return;
-      }
-      this.interactive = true;
-      canvas.focus();
-      this.dragging = true;
-      this.lastX = e.clientX;
-      this.lastY = e.clientY;
-      canvas.setPointerCapture(e.pointerId);
-    });
-    canvas.addEventListener('pointerup', () => {
-      this.dragging = false;
-    });
-    canvas.addEventListener('pointercancel', () => {
-      this.dragging = false;
-    });
-    canvas.addEventListener('pointermove', e => {
-      // Require an active primary-button drag (avoids rotate while scrolling).
-      if (!this.dragging || (e.buttons & 1) === 0) {
-        return;
-      }
-      const dx = e.clientX - this.lastX;
-      const dy = e.clientY - this.lastY;
-      this.lastX = e.clientX;
-      this.lastY = e.clientY;
-      this.yaw += dx * 0.01;
-      this.pitch += dy * 0.01;
-      this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch));
+    canvas.addEventListener('pointerdown', this.onPointerDown);
+    canvas.addEventListener('pointerup', this.onPointerUp);
+    canvas.addEventListener('pointercancel', this.onPointerUp);
+    canvas.addEventListener('pointermove', this.onPointerMove);
+    canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    canvas.addEventListener('keydown', this.onKeyDown);
+    canvas.addEventListener('blur', this.onBlur);
+  }
+
+  private readonly onPointerDown = (e: PointerEvent): void => {
+    if (e.button !== 0) {
+      return;
+    }
+    this.interactive = true;
+    this.canvas.focus();
+    this.dragging = true;
+    this.lastX = e.clientX;
+    this.lastY = e.clientY;
+    this.canvas.setPointerCapture(e.pointerId);
+  };
+
+  private readonly onPointerUp = (): void => {
+    this.dragging = false;
+  };
+
+  private readonly onPointerMove = (e: PointerEvent): void => {
+    if (!this.dragging || (e.buttons & 1) === 0) {
+      return;
+    }
+    const dx = e.clientX - this.lastX;
+    const dy = e.clientY - this.lastY;
+    this.lastX = e.clientX;
+    this.lastY = e.clientY;
+    this.yaw += dx * 0.01;
+    this.pitch += dy * 0.01;
+    this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch));
+    this.scheduleDraw();
+  };
+
+  private readonly onWheel = (e: WheelEvent): void => {
+    if (!this.interactive || document.activeElement !== this.canvas) {
+      return;
+    }
+    e.preventDefault();
+    this.viewScale *= e.deltaY > 0 ? 0.95 : 1.05;
+    this.viewScale = Math.max(1e-4, Math.min(1e4, this.viewScale));
+    this.scheduleDraw();
+  };
+
+  private readonly onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key !== 'Tab') {
+      return;
+    }
+    e.preventDefault();
+    this.resetView();
+    this.canvas.blur();
+  };
+
+  private readonly onBlur = (): void => {
+    this.interactive = false;
+    this.dragging = false;
+  };
+
+  private scheduleDraw(): void {
+    if (this.raf) {
+      return;
+    }
+    this.raf = requestAnimationFrame(() => {
+      this.raf = 0;
       this.draw();
-    });
-    canvas.addEventListener(
-      'wheel',
-      e => {
-        // Let the notebook scroll unless the user has clicked the viewer.
-        if (!this.interactive || document.activeElement !== canvas) {
-          return;
-        }
-        e.preventDefault();
-        this.viewScale *= e.deltaY > 0 ? 0.95 : 1.05;
-        this.viewScale = Math.max(1e-4, Math.min(1e4, this.viewScale));
-        this.draw();
-      },
-      { passive: false }
-    );
-    canvas.addEventListener('keydown', e => {
-      if (e.key !== 'Tab') {
-        return;
-      }
-      e.preventDefault();
-      e.stopPropagation();
-      this.resetView();
-    });
-    canvas.addEventListener('blur', () => {
-      this.interactive = false;
-      this.dragging = false;
     });
   }
 
-  /** Restore morphoview-style home view (Tab). */
   resetView(): void {
     this.yaw = 0;
     this.pitch = 0;
@@ -774,20 +751,16 @@ export class MorphoviewGL {
     this.scene = scene;
     this.yaw = 0;
     this.pitch = 0;
+    this.prepareGpu();
     this.applyFit(/*assignViewScale=*/ true);
     this.draw();
   }
 
-  /**
-   * morphoview display_fit: scale so AABB fills the window with 10% margin;
-   * ortho near/far from scaled Z half-extent.
-   */
   private applyFit(assignViewScale: boolean): void {
     if (!this.scene) {
       return;
     }
-    const aspect =
-      this.canvas.width / Math.max(1, this.canvas.height) || 1;
+    const aspect = this.canvas.width / Math.max(1, this.canvas.height) || 1;
     const b = sceneBounds(this.scene);
     const extent = Math.max(b.hx / aspect, b.hy);
     const scale = extent > 1e-6 ? 1 / (extent * 1.1) : 1;
@@ -820,39 +793,164 @@ export class MorphoviewGL {
 
   dispose(): void {
     cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    const canvas = this.canvas;
+    canvas.removeEventListener('pointerdown', this.onPointerDown);
+    canvas.removeEventListener('pointerup', this.onPointerUp);
+    canvas.removeEventListener('pointercancel', this.onPointerUp);
+    canvas.removeEventListener('pointermove', this.onPointerMove);
+    canvas.removeEventListener('wheel', this.onWheel);
+    canvas.removeEventListener('keydown', this.onKeyDown);
+    canvas.removeEventListener('blur', this.onBlur);
+    this.clearGpu();
+    this.gl.deleteProgram(this.program);
+    this.gl.deleteProgram(this.textProgram);
+  }
+
+  private clearGpu(): void {
+    const gl = this.gl;
+    for (const meshes of this.meshCache.values()) {
+      for (const m of meshes) {
+        gl.deleteBuffer(m.pos);
+        gl.deleteBuffer(m.nrm);
+        gl.deleteBuffer(m.col);
+        gl.deleteBuffer(m.idx);
+      }
+    }
+    this.meshCache.clear();
+    for (const t of this.textCache.values()) {
+      gl.deleteTexture(t.texture);
+      gl.deleteBuffer(t.pos);
+      gl.deleteBuffer(t.uv);
+    }
+    this.textCache.clear();
+  }
+
+  private uploadMesh(mesh: MeshData): GpuMesh {
+    const gl = this.gl;
+    let maxIndex = 0;
+    for (let i = 0; i < mesh.indices.length; i++) {
+      if (mesh.indices[i] > maxIndex) {
+        maxIndex = mesh.indices[i];
+      }
+    }
+    if (maxIndex > 65535 && !this.uint32Indices) {
+      throw new Error(
+        'Mesh has more than 65535 vertices, but OES_element_index_uint is unavailable'
+      );
+    }
+    const useUint32 = this.uint32Indices;
+    const pos = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, pos);
+    gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.STATIC_DRAW);
+    const nrm = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, nrm);
+    gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.STATIC_DRAW);
+    const col = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, col);
+    gl.bufferData(gl.ARRAY_BUFFER, mesh.colors, gl.STATIC_DRAW);
+    const idx = gl.createBuffer()!;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idx);
+    if (useUint32) {
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
+    } else {
+      gl.bufferData(
+        gl.ELEMENT_ARRAY_BUFFER,
+        new Uint16Array(mesh.indices),
+        gl.STATIC_DRAW
+      );
+    }
+    return {
+      pos,
+      nrm,
+      col,
+      idx,
+      count: mesh.indices.length,
+      mode: mesh.mode,
+      indexType: useUint32 ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT
+    };
+  }
+
+  private prepareGpu(): void {
+    this.clearGpu();
+    const scene = this.scene;
+    if (!scene) {
+      return;
+    }
+    const gl = this.gl;
+    const dim = scene.dim || 3;
+    for (const draw of scene.draws) {
+      if (draw.text) {
+        const fontSize = draw.fontSize ?? 12;
+        const rast = rasterizeText(gl, draw.text, fontSize);
+        const positions = new Float32Array([
+          0, rast.yBottom, 0,
+          rast.width, rast.yBottom, 0,
+          rast.width, rast.yTop, 0,
+          0, rast.yBottom, 0,
+          rast.width, rast.yTop, 0,
+          0, rast.yTop, 0
+        ]);
+        const uvs = new Float32Array([
+          0, rast.v, rast.u, rast.v, rast.u, 0,
+          0, rast.v, rast.u, 0, 0, 0
+        ]);
+        const pb = gl.createBuffer()!;
+        gl.bindBuffer(gl.ARRAY_BUFFER, pb);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+        const ub = gl.createBuffer()!;
+        gl.bindBuffer(gl.ARRAY_BUFFER, ub);
+        gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
+        this.textCache.set(draw.drawId, {
+          texture: rast.texture,
+          pos: pb,
+          uv: ub
+        });
+        continue;
+      }
+      const obj = scene.objects.get(draw.objectId);
+      if (!obj) {
+        continue;
+      }
+      const batches: Array<{ mode: number; indices: number[] }> = [];
+      if (obj.facets.length) {
+        batches.push({ mode: gl.TRIANGLES, indices: obj.facets });
+      }
+      if (obj.lines.length) {
+        batches.push({ mode: gl.LINES, indices: obj.lines });
+      }
+      if (obj.points.length) {
+        batches.push({ mode: gl.POINTS, indices: obj.points });
+      }
+      const gpu: GpuMesh[] = [];
+      for (const batch of batches) {
+        const mesh = expandObject(
+          obj,
+          dim,
+          draw,
+          batch.mode,
+          batch.indices,
+          batch.mode === gl.TRIANGLES
+        );
+        if (mesh) {
+          gpu.push(this.uploadMesh(mesh));
+        }
+      }
+      if (gpu.length) {
+        this.meshCache.set(draw.drawId, gpu);
+      }
+    }
   }
 
   private drawText(draw: MvDraw, mvpBase: Float32Array): void {
-    if (!draw.text) {
+    const cached = this.textCache.get(draw.drawId);
+    if (!cached) {
       return;
     }
     const gl = this.gl;
     const color: Vec4 = draw.color ?? [1, 1, 1, 1];
-    const fontSize = draw.fontSize ?? 12;
-    const { texture, width, yTop, yBottom, u, v } = rasterizeText(
-      gl,
-      draw.text,
-      fontSize
-    );
-
-    // Positions: BL, BR, TR, BL, TR, TL (y up, baseline at 0). Without
-    // UNPACK_FLIP_Y, canvas top is texture v=0 → top of quad uses low v.
-    const positions = new Float32Array([
-      0, yBottom, 0,
-      width, yBottom, 0,
-      width, yTop, 0,
-      0, yBottom, 0,
-      width, yTop, 0,
-      0, yTop, 0
-    ]);
-    const uvs = new Float32Array([
-      0, v, u, v, u, 0,
-      0, v, u, 0, 0, 0
-    ]);
-
     const mvp = mulMat4(mvpBase, draw.matrix);
     gl.useProgram(this.textProgram);
-    // Avoid leftover mesh attribs from the lit program.
     if (this.attribs.aNormal >= 0) {
       gl.disableVertexAttribArray(this.attribs.aNormal);
     }
@@ -862,18 +960,14 @@ export class MorphoviewGL {
     gl.uniformMatrix4fv(this.textLocs.uMVP, false, mvp);
     gl.uniform4fv(this.textLocs.uColor, color);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.bindTexture(gl.TEXTURE_2D, cached.texture);
     gl.uniform1i(this.textLocs.uTex, 0);
 
-    const pb = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, pb);
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STREAM_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cached.pos);
     gl.enableVertexAttribArray(this.textAttribs.aPosition);
     gl.vertexAttribPointer(this.textAttribs.aPosition, 3, gl.FLOAT, false, 0, 0);
 
-    const ub = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, ub);
-    gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STREAM_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cached.uv);
     gl.enableVertexAttribArray(this.textAttribs.aUV);
     gl.vertexAttribPointer(this.textAttribs.aUV, 2, gl.FLOAT, false, 0, 0);
 
@@ -885,111 +979,63 @@ export class MorphoviewGL {
     }
 
     gl.disableVertexAttribArray(this.textAttribs.aUV);
-    gl.deleteBuffer(pb);
-    gl.deleteBuffer(ub);
-    gl.deleteTexture(texture);
     gl.useProgram(this.program);
   }
 
   private drawDraw(
     draw: MvDraw,
-    obj: MvObject,
-    dim: number,
     mvpBase: Float32Array,
     eye: Vec3,
     light: Vec3,
     lightColor: Vec3,
     transparentPass: boolean
   ): void {
+    const meshes = this.meshCache.get(draw.drawId);
+    if (!meshes) {
+      return;
+    }
     const gl = this.gl;
-    const batches: Array<{ mode: number; indices: number[] }> = [];
-    if (obj.facets.length) {
-      batches.push({ mode: gl.TRIANGLES, indices: obj.facets });
-    }
-    if (obj.lines.length) {
-      batches.push({ mode: gl.LINES, indices: obj.lines });
-    }
-    if (obj.points.length) {
-      batches.push({ mode: gl.POINTS, indices: obj.points });
-    }
+    const model = draw.matrix;
+    const mvp = mulMat4(mvpBase, model);
+    const nmat = normalMatrix(model);
 
-    for (const batch of batches) {
-      const mesh = expandObject(
-        obj,
-        dim,
-        draw,
-        batch.mode,
-        batch.indices,
-        batch.mode === gl.TRIANGLES
-      );
-      if (!mesh) {
-        continue;
-      }
-      const model = draw.matrix;
-      const mvp = mulMat4(mvpBase, model);
-      const nmat = normalMatrix(model);
+    gl.uniformMatrix4fv(this.locs.uMVP, false, mvp);
+    gl.uniformMatrix4fv(this.locs.uModel, false, model);
+    gl.uniformMatrix3fv(this.locs.uNormalMat, false, nmat);
+    gl.uniform3fv(this.locs.uLightPos, light);
+    gl.uniform3fv(this.locs.uLightColor, lightColor);
+    gl.uniform3fv(this.locs.uEye, eye);
+    gl.uniform1f(this.locs.uKa, draw.ka);
+    gl.uniform1f(this.locs.uKd, draw.kd);
+    gl.uniform1f(this.locs.uKs, draw.ks);
+    gl.uniform1f(this.locs.uShininess, draw.shininess);
+    gl.uniform1i(this.locs.uFlat, draw.flat ? 1 : 0);
 
-      gl.uniformMatrix4fv(this.locs.uMVP, false, mvp);
-      gl.uniformMatrix4fv(this.locs.uModel, false, model);
-      gl.uniformMatrix3fv(this.locs.uNormalMat, false, nmat);
-      gl.uniform3fv(this.locs.uLightPos, light);
-      gl.uniform3fv(this.locs.uLightColor, lightColor);
-      gl.uniform3fv(this.locs.uEye, eye);
-      gl.uniform1f(this.locs.uKa, draw.ka);
-      gl.uniform1f(this.locs.uKd, draw.kd);
-      gl.uniform1f(this.locs.uKs, draw.ks);
-      gl.uniform1f(this.locs.uShininess, draw.shininess);
-      gl.uniform1i(this.locs.uFlat, draw.flat ? 1 : 0);
-
-      const pb = gl.createBuffer()!;
-      gl.bindBuffer(gl.ARRAY_BUFFER, pb);
-      gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.STREAM_DRAW);
+    for (const mesh of meshes) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.pos);
       gl.enableVertexAttribArray(this.attribs.aPosition);
       gl.vertexAttribPointer(this.attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
 
-      const nb = gl.createBuffer()!;
-      gl.bindBuffer(gl.ARRAY_BUFFER, nb);
-      gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.STREAM_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nrm);
       gl.enableVertexAttribArray(this.attribs.aNormal);
       gl.vertexAttribPointer(this.attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
 
-      const cb = gl.createBuffer()!;
-      gl.bindBuffer(gl.ARRAY_BUFFER, cb);
-      gl.bufferData(gl.ARRAY_BUFFER, mesh.colors, gl.STREAM_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.col);
       gl.enableVertexAttribArray(this.attribs.aColor);
       gl.vertexAttribPointer(this.attribs.aColor, 4, gl.FLOAT, false, 0, 0);
 
-      const ib = gl.createBuffer()!;
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
-      // WebGL1 may lack OES_element_index_uint — fall back to Uint16 when possible
-      const ext = gl.getExtension('OES_element_index_uint');
-      const indexType = ext ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-      if (ext) {
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STREAM_DRAW);
-      } else {
-        const shortIdx = new Uint16Array(mesh.indices.length);
-        for (let i = 0; i < mesh.indices.length; i++) {
-          shortIdx[i] = mesh.indices[i] & 0xffff;
-        }
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, shortIdx, gl.STREAM_DRAW);
-      }
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.idx);
 
-      // Closed translucent meshes: back faces then front (morphoview).
       if (transparentPass && mesh.mode === gl.TRIANGLES) {
         gl.enable(gl.CULL_FACE);
         gl.cullFace(gl.FRONT);
-        gl.drawElements(mesh.mode, mesh.indices.length, indexType, 0);
+        gl.drawElements(mesh.mode, mesh.count, mesh.indexType, 0);
         gl.cullFace(gl.BACK);
-        gl.drawElements(mesh.mode, mesh.indices.length, indexType, 0);
+        gl.drawElements(mesh.mode, mesh.count, mesh.indexType, 0);
         gl.disable(gl.CULL_FACE);
       } else {
-        gl.drawElements(mesh.mode, mesh.indices.length, indexType, 0);
+        gl.drawElements(mesh.mode, mesh.count, mesh.indexType, 0);
       }
-
-      gl.deleteBuffer(pb);
-      gl.deleteBuffer(nb);
-      gl.deleteBuffer(cb);
-      gl.deleteBuffer(ib);
     }
   }
 
@@ -1006,7 +1052,6 @@ export class MorphoviewGL {
     const b = sceneBounds(scene);
     const aspect = this.canvas.width / Math.max(1, this.canvas.height);
 
-    // morphoview: ortho ±aspect / ±1, view = Rx Ry S T(-center)
     const proj = ortho(-aspect, aspect, -1, 1, this.orthoNear, this.orthoFar);
     let view = translateMat(-b.center[0], -b.center[1], -b.center[2]);
     view = mulMat4(scaleMat(this.viewScale), view);
@@ -1017,7 +1062,6 @@ export class MorphoviewGL {
     const invView = invertMat4(view);
     const eye: Vec3 = [invView[12], invView[13], invView[14]];
 
-    // morphoview AABB auto-light: center + (0.7, 1.0, 1.5) * radius
     const light: Vec3 = scene.lightPos
       ? scene.lightPos
       : [
@@ -1045,26 +1089,19 @@ export class MorphoviewGL {
         opaque.push(d);
       }
     }
-    // Far → near (ascending view-z), same as morphoview render_tdraw_cmp.
     transparent.sort((a, b) => a.depth - b.depth);
 
     gl.disable(gl.BLEND);
     gl.depthMask(true);
     for (const d of opaque) {
-      const obj = scene.objects.get(d.objectId);
-      if (obj) {
-        this.drawDraw(d, obj, dim, mvpBase, eye, light, lightColor, false);
-      }
+      this.drawDraw(d, mvpBase, eye, light, lightColor, false);
     }
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     for (const { draw: d } of transparent) {
-      const obj = scene.objects.get(d.objectId);
-      if (obj) {
-        this.drawDraw(d, obj, dim, mvpBase, eye, light, lightColor, true);
-      }
+      this.drawDraw(d, mvpBase, eye, light, lightColor, true);
     }
 
     gl.depthMask(true);

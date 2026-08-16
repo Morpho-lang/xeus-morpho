@@ -8,7 +8,6 @@
 
 cmake_minimum_required(VERSION 3.10)
 project(xeus-morpho)
-set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
 
 set(XEUS_MORPHO_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -128,27 +127,15 @@ if (NOT TARGET xeus AND NOT TARGET xeus-static)
     find_package(xeus ${xeus_REQUIRED_VERSION} REQUIRED)
 endif ()
 
+find_package(Threads REQUIRED)
+
 #-------------------------------------------------------------------------------
 # Flags
 #-------------------------------------------------------------------------------
 
-include(CheckCXXCompilerFlag)
-
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4251 /wd4141")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4018 /wd4267 /wd4715 /wd4146 /wd4129")
-endif ()
-
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Intel")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wunused-parameter -Wextra -Wreorder")
-    
-
-    CHECK_CXX_COMPILER_FLAG("-std=c++17" HAS_CPP_17_FLAG)
-    if (HAS_CPP_17_FLAG)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
-    else ()
-        message(FATAL_ERROR "Unsupported compiler -- xeus requires C++17 support!")
-    endif ()
 endif ()
 
 
@@ -179,8 +166,6 @@ set(XEUS_MORPHO_MAIN_SRC
 # Targets and link - Macros
 #-------------------------------------------------------------------------------
 
-include(CheckCXXCompilerFlag)
-
 string(TOUPPER "${CMAKE_BUILD_TYPE}" U_CMAKE_BUILD_TYPE)
 
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib; ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
@@ -196,15 +181,9 @@ macro(xeus_morpho_set_common_options target_name)
         CMAKE_CXX_COMPILER_ID MATCHES "Intel")
 
         target_compile_options(${target_name} PUBLIC -Wunused-parameter -Wextra -Wreorder)
-
-        # C++17 flag
-        CHECK_CXX_COMPILER_FLAG("-std=c++17" HAS_CPP_17_FLAG)
-        if (HAS_CPP_17_FLAG)
-            target_compile_features(${target_name} PRIVATE cxx_std_17)
-        else ()
-            message(FATAL_ERROR "Unsupported compiler -- xeus-morpho requires C++17 support!")
-        endif ()
     endif ()
+
+    target_compile_features(${target_name} PRIVATE cxx_std_17)
 
     if (APPLE)
         set_target_properties(${target_name} PROPERTIES
@@ -227,15 +206,13 @@ macro(xeus_morpho_set_kernel_options target_name)
     if (XEUS_MORPHO_USE_SHARED_XEUS_MORPHO)
         target_link_libraries(${target_name} PRIVATE xeus-morpho)
         if(CMAKE_DL_LIBS)
-            target_link_libraries(${target_name} PRIVATE ${CMAKE_DL_LIBS} util)
+            target_link_libraries(${target_name} PRIVATE ${CMAKE_DL_LIBS})
         endif()
     else ()
         target_link_libraries(${target_name} PRIVATE xeus-morpho-static)
     endif()
 
-    find_package(Threads) 
-        target_link_libraries(${target_name} PRIVATE ${CMAKE_THREAD_LIBS_INIT})
-    
+    target_link_libraries(${target_name} PRIVATE Threads::Threads)
 endmacro()
 
 # Common macro for shared and static library
@@ -258,8 +235,6 @@ macro(xeus_morpho_create_target target_name linkage output_name)
 
     target_compile_definitions(${target_name} PUBLIC "XEUS_MORPHO_EXPORTS")
 
-    target_compile_features(${target_name} PRIVATE cxx_std_17)
-
     target_include_directories(${target_name}
                                PUBLIC
                                $<BUILD_INTERFACE:${XEUS_MORPHO_INCLUDE_DIR}>
@@ -273,15 +248,12 @@ macro(xeus_morpho_create_target target_name linkage output_name)
         set(XEUS_MORPHO_XEUS_TARGET xeus-static)
     endif ()
 
-    target_link_libraries(${target_name} PUBLIC ${XEUS_MORPHO_XEUS_TARGET} ${MORPHO_LIBRARY})
+    target_link_libraries(${target_name} PUBLIC ${XEUS_MORPHO_XEUS_TARGET} ${MORPHO_LIBRARY} Threads::Threads)
     if (WIN32 OR CYGWIN)
         #
     elseif (APPLE)
         # target_link_libraries(${target_name} PRIVATE "-undefined dynamic_lookup")
     endif ()
-    find_package(Threads) # TODO: add Threads as a dependence of xeus-static?
-        target_link_libraries(${target_name} PRIVATE ${CMAKE_THREAD_LIBS_INIT})
-    
 endmacro()
 
 #-------------------------------------------------------------------------------
@@ -314,7 +286,6 @@ endif ()
 if (XEUS_MORPHO_BUILD_EXECUTABLE)
     find_package(xeus-zmq ${xeus-zmq_REQUIRED_VERSION} REQUIRED)
     add_executable(xmorpho ${XEUS_MORPHO_MAIN_SRC})
-    target_compile_features(xmorpho PRIVATE cxx_std_17)
     xeus_morpho_set_common_options(xmorpho)
     xeus_morpho_set_kernel_options(xmorpho)
     target_link_libraries(xmorpho PRIVATE xeus-zmq)
@@ -331,7 +302,7 @@ include(CMakePackageConfigHelpers)
 set(XEUS_MORPHO_CMAKECONFIG_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}" CACHE STRING "install path for xeus-morphoConfig.cmake")
 
 # Install xeus-morpho and xeus-morpho-static
-if (XEUS_MORPHO_BUILD_SHARED)
+if (XEUS_MORPHO_TARGETS)
     install(TARGETS ${XEUS_MORPHO_TARGETS}
             EXPORT ${PROJECT_NAME}-targets
             ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -378,9 +349,7 @@ if (XEUS_MORPHO_BUILD_EXECUTABLE)
 endif ()
 
 # Configure 'xeus-morphoConfig.cmake' for a build tree
-set(XEUS_MORPHO_CONFIG_CODE "####### Expanded from \@XEUS_MORPHO_CONFIG_CODE\@ #######\n")
-set(XEUS_MORPHO_CONFIG_CODE "${XEUS_MORPHO_CONFIG_CODE}set(CMAKE_MODULE_PATH \"${CMAKE_CURRENT_SOURCE_DIR}/cmake;\${CMAKE_MODULE_PATH}\")\n")
-set(XEUS_MORPHO_CONFIG_CODE "${XEUS_MORPHO_CONFIG_CODE}##################################################")
+set(XEUS_MORPHO_CONFIG_CODE "")
 configure_package_config_file(${PROJECT_NAME}Config.cmake.in
                               "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
                               INSTALL_DESTINATION ${PROJECT_BINARY_DIR})
@@ -398,7 +367,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${PROJECT_NAME}Config.cmake
               ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake
               DESTINATION ${XEUS_MORPHO_CMAKECONFIG_INSTALL_DIR})
 
-if (XEUS_MORPHO_BUILD_SHARED)
+if (XEUS_MORPHO_TARGETS)
     install(EXPORT ${PROJECT_NAME}-targets
             FILE ${PROJECT_NAME}Targets.cmake
             DESTINATION ${XEUS_MORPHO_CMAKECONFIG_INSTALL_DIR})
