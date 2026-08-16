@@ -1,7 +1,7 @@
 {
   "name": "jupyterlab-morpho",
   "version": "0.1.1",
-  "description": "Morpho CodeMirror 6 language support for JupyterLab (prototype)",
+  "description": "Morpho CodeMirror 6 language support and morphoview WebGL MIME renderer for JupyterLab",
   "keywords": [
     "jupyter",
     "jupyterlab",
@@ -47,7 +47,10 @@
     "@codemirror/language": "^6.0.0",
     "@jupyterlab/application": "^4.0.0",
     "@jupyterlab/codemirror": "^4.0.0",
-    "@lezer/highlight": "^1.0.0"
+    "@jupyterlab/rendermime": "^4.0.0",
+    "@jupyterlab/rendermime-interfaces": "^3.8.0",
+    "@lezer/highlight": "^1.0.0",
+    "@lumino/widgets": "^2.0.0"
   },
   "devDependencies": {
     "@jupyterlab/builder": "^4.0.0",

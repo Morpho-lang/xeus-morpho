@@ -1,0 +1,54 @@
+/** Notebook display for Graphics / Scene via morphoview ASCII IR.
+ *
+ *  Serializes with Show.write (same IR as desktop morphoview) and publishes
+ *  Jupyter display_data through the xeus-morpho JupyterDisplay builtin.
+ *
+ *    import xgraphics
+ *    import xcolor
+ *    import xjupyter
+ *
+ *    var g = Graphics()
+ *    g.display(Sphere([0, 0, 0], 1, color=Red))
+ *    Display(g)
+ *
+ *  Requires the xmorpho Jupyter kernel (JupyterDisplay builtin) and the
+ *  morphoview package modules (xshow / xgraphics).
+ */
+
+import xshow
+
+/** Pairwise-merge join — same strategy as morphoview.View. */
+fn _joinLines(lines) {
+  if (lines.count() == 0) return ""
+  var cur = lines
+  while (cur.count() > 1) {
+    var nxt = []
+    var i = 0
+    while (i < cur.count()) {
+      if (i + 1 < cur.count()) {
+        nxt.append(String(cur[i], cur[i + 1]))
+        i += 2
+      } else {
+        nxt.append(cur[i])
+        i += 1
+      }
+    }
+    cur = nxt
+  }
+  return cur[0]
+}
+
+/** Show.write sink that accumulates ASCII command lines. */
+class _CmdBuf {
+  init() { self.lines = [] }
+  write(line) { self.lines.append("${line}\n") }
+  text() { return _joinLines(self.lines) }
+}
+
+/** Serialize Graphics/Scene to morphoview IR and show it in the notebook.
+ *  Parallel to Show(g) for the desktop viewer; requires the xmorpho kernel. */
+fn Display(g) {
+  var buf = _CmdBuf()
+  Show().write(g, buf)
+  JupyterDisplay(buf.text())
+}

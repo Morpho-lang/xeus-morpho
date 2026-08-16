@@ -25,16 +25,9 @@ class XMorphoKernelTests(jupyter_kernel_test.KernelTests):
     language_name = "morpho"
     file_extension = ".morpho"
 
-    # Morpho print goes to execute_result (text/plain), not a stdout stream.
-    # Leave code_hello_world unset so test_execute_stdout is skipped.
-    code_execute_result = [
-        {
-            "code": 'print "hello, world"',
-            # Morpho print includes a trailing newline.
-            "result": "hello, world\n",
-            "mime": "text/plain",
-        }
-    ]
+    # Print streams to stdout live (so long runs show progress). Leave
+    # code_execute_result unset so test_execute_result is skipped.
+    code_hello_world = 'print "hello, world"'
 
     code_generate_error = "var = 1"
 
@@ -117,12 +110,12 @@ class XMorphoKernelTests(jupyter_kernel_test.KernelTests):
         assert reply is not None
         self.assertEqual(reply["content"]["status"], "ok")
 
-        # Drain iopub until idle; look for the echoed line in execute_result.
+        # Drain iopub until idle; look for the echoed line on stdout.
         busy_msg = ensure_sync(self.kc.iopub_channel.get_msg)(timeout=1)
         validate_message(busy_msg, "status", msg_id)
         self.assertEqual(busy_msg["content"]["execution_state"], "busy")
 
-        found_result = False
+        found_stdout = False
         while True:
             msg = ensure_sync(self.kc.iopub_channel.get_msg)(timeout=TIMEOUT)
             validate_message(msg, msg["msg_type"], msg_id)
@@ -131,11 +124,11 @@ class XMorphoKernelTests(jupyter_kernel_test.KernelTests):
                 break
             if msg["msg_type"] == "execute_input":
                 continue
-            if msg["msg_type"] == "execute_result":
-                found_result = True
-                self.assertIn("hello from stdin", msg["content"]["data"]["text/plain"])
+            if msg["msg_type"] == "stream" and msg["content"].get("name") == "stdout":
+                if "hello from stdin" in msg["content"].get("text", ""):
+                    found_stdout = True
 
-        self.assertTrue(found_result, "execute_result with readline echo not found")
+        self.assertTrue(found_stdout, "stdout with readline echo not found")
 
 
 if __name__ == "__main__":

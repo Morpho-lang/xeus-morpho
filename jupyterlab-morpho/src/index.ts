@@ -1,5 +1,5 @@
 /**
- * JupyterLab plugin: register Morpho with the CodeMirror language registry.
+ * JupyterLab plugins: Morpho language + morphoview MIME renderer.
  */
 
 import {
@@ -7,11 +7,13 @@ import {
   JupyterFrontEndPlugin
 } from '@jupyterlab/application';
 import { IEditorLanguageRegistry } from '@jupyterlab/codemirror';
+import { IRenderMimeRegistry } from '@jupyterlab/rendermime';
 import { LanguageSupport } from '@codemirror/language';
 
 import { morpho } from './language';
+import { rendererFactory, MORPHOVIEW_MIME } from './mime';
 
-const plugin: JupyterFrontEndPlugin<void> = {
+const languagePlugin: JupyterFrontEndPlugin<void> = {
   id: 'jupyterlab-morpho:plugin',
   description: 'Morpho syntax highlighting for JupyterLab',
   autoStart: true,
@@ -27,4 +29,16 @@ const plugin: JupyterFrontEndPlugin<void> = {
   }
 };
 
-export default plugin;
+const mimePlugin: JupyterFrontEndPlugin<void> = {
+  id: 'jupyterlab-morpho:morphoview',
+  description: 'Morphoview WebGL MIME renderer',
+  autoStart: true,
+  requires: [IRenderMimeRegistry],
+  activate: (_app: JupyterFrontEnd, rendermime: IRenderMimeRegistry) => {
+    rendermime.addFactory(rendererFactory);
+    // Ensure preferred order for our MIME
+    void MORPHOVIEW_MIME;
+  }
+};
+
+export default [languagePlugin, mimePlugin];

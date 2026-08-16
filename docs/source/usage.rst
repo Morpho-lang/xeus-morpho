@@ -17,8 +17,10 @@ Code execution
 --------------
 
 Cells run Morpho source through the kernel. Printed output (the ``print``
-statement and ``System.print``) appears as the cell result. Compilation and
-runtime errors are reported with Morpho's message and stack trace.
+statement and ``System.print``) is streamed to stdout as it is produced, so
+long-running cells (for example optimizers) show progress during the run.
+Compilation and runtime errors are reported with Morpho's message and stack
+trace.
 
 Variables persist across cells in the same kernel session, as in the Morpho
 REPL.
@@ -63,13 +65,33 @@ Not yet supported
 
 The following Jupyter features are **not** wired up yet:
 
-- Rich display / ``Show`` as notebook images (Morpho still launches morphoview)
-- Jupyter widgets and comms
+- Live ``View`` sessions / Jupyter widgets and comms (use desktop morphoview ``View``)
 - The Jupyter debugger protocol
 
-Those may appear in later releases; do not expect cookiecutter-style demos
-for them.
+In-notebook graphics (static ``Show`` path)
+-------------------------------------------
 
-Interactive stdin (``System.readline``) uses Jupyter's input prompt. Any
-``print`` output before ``readline`` is flushed to stdout so prompts are
-visible.
+With the morphoview package (for ``xgraphics`` / ``xshow``), xeus-morpho's
+``xjupyter`` module on the Morpho package path, and the jupyterlab-morpho MIME
+renderer:
+
+.. code-block:: morpho
+
+    import xgraphics
+    import xcolor
+    import xjupyter
+
+    var g = Graphics()
+    g.display(Sphere([0, 0, 0], 1, color=Red))
+    Display(g)
+
+``Display(g)`` serializes via ``Show.write`` and publishes
+``application/vnd.morpho.morphoview`` display data (WebGL in Lab). Desktop
+``Show(g)`` still launches the native morphoview window.
+
+List this repository in ``~/.morphopackages`` (or install the shipped
+``share/modules``) so ``import xjupyter`` resolves.
+
+Interactive stdin (``System.readline``) uses Jupyter's input prompt. Print
+output is streamed to stdout as it is produced, so prompts appear before the
+input box.

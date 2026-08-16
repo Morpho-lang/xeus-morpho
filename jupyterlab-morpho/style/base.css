@@ -1,1 +1,17 @@
-/* Prototype labextension — no custom CSS required. */
+.jp-MorphoviewRenderer {
+  background: #1e1e28;
+  border-radius: 2px;
+}
+
+.jp-MorphoviewRenderer canvas {
+  cursor: grab;
+}
+
+.jp-MorphoviewRenderer canvas:active {
+  cursor: grabbing;
+}
+
+.jp-MorphoviewRenderer canvas:focus {
+  outline: 1px solid rgba(255, 255, 255, 0.35);
+  outline-offset: -1px;
+}

@@ -56,6 +56,8 @@ namespace xeus_morpho
         void print(const std::string& output);
         /** Flush pending print output, then fill str via Jupyter stdin. */
         void fill_input(varray_char* str);
+        /** Publish morphoview ASCII IR as Jupyter display_data. */
+        void display_morphoview(const std::string& ascii);
 
     protected:
 
@@ -88,6 +90,8 @@ namespace xeus_morpho
         vm *morpho_vm; 
 
         std::string buffer;
+        /** When false, print() only buffers (used while collecting stack traces). */
+        bool stream_prints = true;
     };
 }
 

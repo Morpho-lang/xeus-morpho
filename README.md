@@ -75,6 +75,13 @@ Restart JupyterLab (hard-refresh the browser). See
 [`jupyterlab-morpho/README.md`](jupyterlab-morpho/README.md) for details.
 Token tables are kept extractable for a future shared Morpho syntax package.
 
+The same extension renders morphoview ASCII IR (`application/vnd.morpho.morphoview`)
+via WebGL when you `import xjupyter` and call `Display(g)`. The Morpho module lives in
+[`share/modules/xjupyter.morpho`](share/modules/xjupyter.morpho); add this repo to
+`~/.morphopackages` (or install) so Morpho can find it. You still need the morphoview
+package for `xgraphics` / `xshow`. See
+[`notebooks/morphoview-display.ipynb`](notebooks/morphoview-display.ipynb).
+
 ## Documentation
 
 - Kernel usage notes: [`docs/source/usage.rst`](docs/source/usage.rst)

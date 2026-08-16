@@ -161,12 +161,14 @@ set(XEUS_MORPHO_HEADERS
     include/xeus-morpho/xeus_morpho_config.hpp
     include/xeus-morpho/xhelp.hpp
     include/xeus-morpho/xinterpreter.hpp
+    include/xeus-morpho/xjupyter.hpp
 )
 
 set(XEUS_MORPHO_SRC
     src/xinterpreter.cpp
     src/xcomplete.cpp
     src/xhelp.cpp
+    src/xjupyter.cpp
 )
 
 set(XEUS_MORPHO_MAIN_SRC
@@ -356,6 +358,16 @@ if (XEUS_MORPHO_BUILD_EXECUTABLE)
             DESTINATION ${XJUPYTER_DATA_DIR}
             PATTERN "*.in" EXCLUDE)
 
+
+    # Install Morpho modules / help shipped with xeus-morpho (xjupyter, etc.)
+    # Discoverable when this repo is listed in ~/.morphopackages, and also
+    # when installed under the Morpho share tree.
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/share/modules
+            DESTINATION share/morpho
+            FILES_MATCHING PATTERN "*.morpho")
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/share/help
+            DESTINATION share/morpho
+            FILES_MATCHING PATTERN "*.md")
 
     # Extra path for installing Jupyter kernelspec
     if (XEXTRA_JUPYTER_DATA_DIR)

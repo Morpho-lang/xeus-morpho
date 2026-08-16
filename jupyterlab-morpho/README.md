@@ -1,11 +1,10 @@
 # jupyterlab-morpho
 
-Prototype Morpho syntax highlighting for **JupyterLab 4** / Notebook 7 (CodeMirror 6 `StreamLanguage`).
+Morpho syntax highlighting and **morphoview WebGL MIME** rendering for **JupyterLab 4** / Notebook 7.
 
-This package is intentionally structured so language rules can move into a shared
-`morpho-syntax` package later. Token tables in [`src/tokens.ts`](src/tokens.ts)
-are synced with Morpho's lexer (`standardtokens[]` in Morpho's `lex.c`) and have
-no JupyterLab imports.
+Token tables in [`src/tokens.ts`](src/tokens.ts) are synced with Morpho's lexer and have
+no JupyterLab imports. The MIME renderer interprets `application/vnd.morpho.morphoview`
+(ASCII command IR from `Show.write` / `xjupyter.display`).
 
 ## Install (development)
 
@@ -17,34 +16,31 @@ jlpm build
 jupyter labextension develop . --overwrite
 ```
 
-Or, after `jlpm build`, symlink the built extension:
-
-```bash
-# example — adjust to your prefix
-ln -sfn "$(pwd)/jupyterlab_morpho/labextension" \
-  "$CONDA_PREFIX/share/jupyter/labextensions/jupyterlab-morpho"
-```
-
-Fully restart JupyterLab and hard-refresh the browser so the federated bundle
-reloads. Open a notebook with the **morpho (xmorpho)** kernel; cells should
-highlight Morpho keywords (`fn`, `var`, `with`, …), comments, strings, and
-numbers. Help markdown fences tagged `morpho` use the same highlighter.
-
-The xeus-morpho kernel advertises `language_info.codemirror_mode = "morpho"` and
-`mimetype = "text/x-morpho"`. Without this labextension, cells stay plain text.
+Fully restart JupyterLab and hard-refresh the browser. Open a notebook with the
+**morpho (xmorpho)** kernel. Cells highlight Morpho; `Display(g)` from `xjupyter`
+renders interactive WebGL (drag to orbit, scroll to zoom).
 
 ## Layout
 
 | File | Role |
 |------|------|
-| `src/tokens.ts` | Extractable keyword / literal / operator tables |
+| `src/tokens.ts` | Keyword / literal / operator tables |
 | `src/language.ts` | CM6 StreamLanguage adapter |
-| `src/index.ts` | Lab `IEditorLanguageRegistry` glue only |
+| `src/parse.ts` | Morphoview ASCII IR parser |
+| `src/render.ts` | WebGL drawer |
+| `src/mime.ts` | `IRenderMime` widget factory |
+| `src/index.ts` | Language + MIME plugins |
 
-## Extraction path
+## Notebook graphics
 
-When a second consumer (e.g. VS Code) needs the same rules:
+```morpho
+import xgraphics
+import xcolor
+import xjupyter
 
-1. Move `tokens.ts` (and optionally a TextMate grammar) to `morpho-syntax`
-2. Keep this package as a thin Lab adapter
-3. Leave xeus-morpho with only `language_info` wiring
+var g = Graphics()
+g.display(Sphere([0,0,0], 1, color=Red))
+Display(g)
+```
+
+Requires xeus-morpho (`JupyterDisplay` builtin + `share/modules/xjupyter.morpho` on the Morpho package path) and the morphoview package for `xgraphics` / `xshow`.

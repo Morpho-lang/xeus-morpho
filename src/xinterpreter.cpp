@@ -19,6 +19,7 @@
 
 #include "xeus-morpho/xhelp.hpp"
 #include "xeus-morpho/xinterpreter.hpp"
+#include "xeus-morpho/xjupyter.hpp"
 
 namespace nl = nlohmann;
 
@@ -61,6 +62,8 @@ namespace xeus_morpho
         morpho_setwarningfn(morpho_vm, xeus_morphowarningfn, this);
         morpho_setinputfn(morpho_vm, xeus_morphoinputfn, this);
 
+        register_jupyter_builtins(this);
+
         xeus::register_interpreter(this);
         
         buffer = "";
@@ -83,17 +86,26 @@ namespace xeus_morpho
 
     void interpreter::print(const std::string& output)
     {
+        // Stream live so long runs (e.g. optimizers) show progress during the cell.
+        // Keep a copy for stack traces; do not also publish as execute_result.
         buffer += output;
+        if (stream_prints && !output.empty()) {
+            publish_stream("stdout", output);
+        }
+    }
+
+    void interpreter::display_morphoview(const std::string& ascii)
+    {
+        nl::json data;
+        data[MORPHOVIEW_MIME] = ascii;
+        data["text/plain"] = "[morphoview graphics]";
+        // xeus 5: display_data (was publish_display_data in older xeus)
+        display_data(std::move(data), nl::json::object(), nl::json::object());
     }
 
     void interpreter::fill_input(varray_char* str)
     {
-        // Publish any pending print output first so prompts appear before the input box.
-        if (!buffer.empty()) {
-            publish_stream("stdout", buffer);
-            buffer.clear();
-        }
-
+        // Prints are already streamed live; just wait for stdin.
         std::string line = xeus::blocking_input_request("", /*password=*/false);
         while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
             line.pop_back();
@@ -148,15 +160,7 @@ namespace xeus_morpho
 
             // Now process the output 
             if (success) {
-                // Only publish a result when Morpho produced output; an empty
-                // execute_result shows up as a blank Out[] line in the frontend.
-                if (!buffer.empty()) {
-                    nl::json pub_data;
-                    pub_data["text/plain"] = buffer;
-
-                    publish_execution_result(execution_count, std::move(pub_data), nl::json::object());
-                }
-                
+                // Print output was already streamed to stdout during the run.
                 kernel_res["status"] = "ok";
                 kernel_res["user_expressions"] = nl::json::object();
             } else {
@@ -166,7 +170,9 @@ namespace xeus_morpho
                 std::string msg(err.msg);
 
                 reset();
+                stream_prints = false;
                 morpho_stacktrace(morpho_vm);
+                stream_prints = true;
                 
                 // Convert stacktrace into string vector
                 std::vector<std::string> stacktrace({"Error '" + id + "': " + msg});
