@@ -104,48 +104,94 @@ function mulMat4(a: Float32Array, b: Float32Array): Float32Array {
   return out;
 }
 
-function perspective(fovy: number, aspect: number, near: number, far: number): Float32Array {
-  const f = 1 / Math.tan(fovy / 2);
+/** Symmetric orthographic projection — matches morphoview mat3d_ortho for ±bounds. */
+function ortho(
+  left: number,
+  right: number,
+  bottom: number,
+  top: number,
+  near: number,
+  far: number
+): Float32Array {
   const out = new Float32Array(16);
-  out[0] = f / aspect;
-  out[5] = f;
-  out[10] = (far + near) / (near - far);
-  out[11] = -1;
-  out[14] = (2 * far * near) / (near - far);
+  out[0] = 2 / (right - left);
+  out[5] = 2 / (top - bottom);
+  out[10] = -2 / (far - near);
+  out[15] = 1;
   return out;
 }
 
-function lookAt(eye: Vec3, center: Vec3, up: Vec3): Float32Array {
-  const zx = eye[0] - center[0];
-  const zy = eye[1] - center[1];
-  const zz = eye[2] - center[2];
-  let zl = Math.hypot(zx, zy, zz) || 1;
-  const z0 = zx / zl;
-  const z1 = zy / zl;
-  const z2 = zz / zl;
-  let xx = up[1] * z2 - up[2] * z1;
-  let xy = up[2] * z0 - up[0] * z2;
-  let xz = up[0] * z1 - up[1] * z0;
-  let xl = Math.hypot(xx, xy, xz) || 1;
-  xx /= xl;
-  xy /= xl;
-  xz /= xl;
-  const y0 = z1 * xz - z2 * xy;
-  const y1 = z2 * xx - z0 * xz;
-  const y2 = z0 * xy - z1 * xx;
+function translateMat(tx: number, ty: number, tz: number): Float32Array {
   const out = identity();
-  out[0] = xx;
-  out[1] = y0;
-  out[2] = z0;
-  out[4] = xy;
-  out[5] = y1;
-  out[6] = z1;
-  out[8] = xz;
-  out[9] = y2;
-  out[10] = z2;
-  out[12] = -(xx * eye[0] + xy * eye[1] + xz * eye[2]);
-  out[13] = -(y0 * eye[0] + y1 * eye[1] + y2 * eye[2]);
-  out[14] = -(z0 * eye[0] + z1 * eye[1] + z2 * eye[2]);
+  out[12] = tx;
+  out[13] = ty;
+  out[14] = tz;
+  return out;
+}
+
+function scaleMat(s: number): Float32Array {
+  const out = identity();
+  out[0] = s;
+  out[5] = s;
+  out[10] = s;
+  return out;
+}
+
+function rotateXMat(angle: number): Float32Array {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const out = identity();
+  out[5] = c;
+  out[6] = s;
+  out[9] = -s;
+  out[10] = c;
+  return out;
+}
+
+function rotateYMat(angle: number): Float32Array {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const out = identity();
+  out[0] = c;
+  out[2] = -s;
+  out[8] = s;
+  out[10] = c;
+  return out;
+}
+
+/** Affine inverse for view matrices (column-major). */
+function invertMat4(m: Float32Array): Float32Array {
+  const out = new Float32Array(16);
+  const n11 = m[0];
+  const n21 = m[1];
+  const n31 = m[2];
+  const n12 = m[4];
+  const n22 = m[5];
+  const n32 = m[6];
+  const n13 = m[8];
+  const n23 = m[9];
+  const n33 = m[10];
+  const t1 = m[12];
+  const t2 = m[13];
+  const t3 = m[14];
+  const det =
+    n11 * (n22 * n33 - n23 * n32) -
+    n21 * (n12 * n33 - n13 * n32) +
+    n31 * (n12 * n23 - n13 * n22);
+  const id = det ? 1 / det : 1;
+  out[0] = (n22 * n33 - n23 * n32) * id;
+  out[1] = (n23 * n31 - n21 * n33) * id;
+  out[2] = (n21 * n32 - n22 * n31) * id;
+  out[4] = (n13 * n32 - n12 * n33) * id;
+  out[5] = (n11 * n33 - n13 * n31) * id;
+  out[6] = (n12 * n31 - n11 * n32) * id;
+  out[8] = (n12 * n23 - n13 * n22) * id;
+  out[9] = (n13 * n21 - n11 * n23) * id;
+  out[10] = (n11 * n22 - n12 * n21) * id;
+  out[12] = -(out[0] * t1 + out[4] * t2 + out[8] * t3);
+  out[13] = -(out[1] * t1 + out[5] * t2 + out[9] * t3);
+  out[14] = -(out[2] * t1 + out[6] * t2 + out[10] * t3);
+  out[15] = 1;
   return out;
 }
 
@@ -186,12 +232,92 @@ interface MeshData {
   mode: number; // gl.TRIANGLES / LINES / POINTS
 }
 
+/**
+ * Flip triangle windings so geometric normal agrees with averaged vertex normals.
+ * Same as morphoview render_orient_facets — required for transparent back/front cull.
+ */
+function orientFacets(obj: MvObject, dim: number, facets: number[]): number[] {
+  if (!obj.format.includes('n') || !obj.format.includes('x') || facets.length < 3) {
+    return facets;
+  }
+  const stride = formatStride(obj.format, dim);
+  let xpos = -1;
+  let npos = -1;
+  let pos = 0;
+  for (const ch of obj.format) {
+    if (ch === 'x') {
+      xpos = pos;
+      pos += dim;
+    } else if (ch === 'n') {
+      npos = pos;
+      pos += dim;
+    } else if (ch === 'c') {
+      pos += 3;
+    } else if (ch === 'a') {
+      pos += 1;
+    }
+  }
+  if (xpos < 0 || npos < 0) {
+    return facets;
+  }
+
+  const out = facets.slice();
+  for (let t = 0; t + 2 < out.length; t += 3) {
+    const i0 = out[t];
+    const i1 = out[t + 1];
+    const i2 = out[t + 2];
+    const p0 = i0 * stride + xpos;
+    const p1 = i1 * stride + xpos;
+    const p2 = i2 * stride + xpos;
+    const n0 = i0 * stride + npos;
+    const n1 = i1 * stride + npos;
+    const n2 = i2 * stride + npos;
+    const p0x = obj.vertices[p0] || 0;
+    const p0y = dim > 1 ? obj.vertices[p0 + 1] || 0 : 0;
+    const p0z = dim > 2 ? obj.vertices[p0 + 2] || 0 : 0;
+    const p1x = obj.vertices[p1] || 0;
+    const p1y = dim > 1 ? obj.vertices[p1 + 1] || 0 : 0;
+    const p1z = dim > 2 ? obj.vertices[p1 + 2] || 0 : 0;
+    const p2x = obj.vertices[p2] || 0;
+    const p2y = dim > 1 ? obj.vertices[p2 + 1] || 0 : 0;
+    const p2z = dim > 2 ? obj.vertices[p2 + 2] || 0 : 0;
+    const n0x = obj.vertices[n0] || 0;
+    const n0y = dim > 1 ? obj.vertices[n0 + 1] || 0 : 0;
+    const n0z = dim > 2 ? obj.vertices[n0 + 2] || 0 : 0;
+    const n1x = obj.vertices[n1] || 0;
+    const n1y = dim > 1 ? obj.vertices[n1 + 1] || 0 : 0;
+    const n1z = dim > 2 ? obj.vertices[n1 + 2] || 0 : 0;
+    const n2x = obj.vertices[n2] || 0;
+    const n2y = dim > 1 ? obj.vertices[n2 + 1] || 0 : 0;
+    const n2z = dim > 2 ? obj.vertices[n2 + 2] || 0 : 0;
+
+    const e1x = p1x - p0x;
+    const e1y = p1y - p0y;
+    const e1z = p1z - p0z;
+    const e2x = p2x - p0x;
+    const e2y = p2y - p0y;
+    const e2z = p2z - p0z;
+    const gx = e1y * e2z - e1z * e2y;
+    const gy = e1z * e2x - e1x * e2z;
+    const gz = e1x * e2y - e1y * e2x;
+    const nx = n0x + n1x + n2x;
+    const ny = n0y + n1y + n2y;
+    const nz = n0z + n1z + n2z;
+    if (gx * nx + gy * ny + gz * nz < 0) {
+      out[t + 1] = i2;
+      out[t + 2] = i1;
+    }
+  }
+  return out;
+}
+
 function expandObject(
   obj: MvObject,
   dim: number,
   draw: MvDraw,
   glMode: number,
-  indexList: number[]
+  indexList: number[],
+  isTriangles: boolean
 ): MeshData | null {
   if (!indexList.length || !obj.vertices.length) {
     return null;
@@ -201,6 +327,8 @@ function expandObject(
   if (nVert < 1) {
     return null;
   }
+
+  const indices = isTriangles ? orientFacets(obj, dim, indexList) : indexList;
 
   const hasN = obj.format.includes('n');
   const hasC = obj.format.includes('c');
@@ -256,7 +384,10 @@ function expandObject(
     // Uniform override still allows vertex alpha when format has a and color override is RGB from C
     if (!draw.useVertexColor && draw.color && hasA) {
       // morphoview: C RGB override keeps vertex a — approximate by keeping ca from vertex
-      ca = obj.vertices[base + (hasC ? dim + (hasN ? dim : 0) + 3 : dim + (hasN ? dim : 0))] ?? draw.color[3];
+      ca =
+        obj.vertices[
+          base + (hasC ? dim + (hasN ? dim : 0) + 3 : dim + (hasN ? dim : 0))
+        ] ?? draw.color[3];
     }
 
     positions.push(px, py, pz);
@@ -268,7 +399,7 @@ function expandObject(
     positions: new Float32Array(positions),
     normals: new Float32Array(normals),
     colors: new Float32Array(colors),
-    indices: new Uint32Array(indexList),
+    indices: new Uint32Array(indices),
     mode: glMode
   };
 }
@@ -380,19 +511,33 @@ function rasterizeText(
   };
 }
 
-function sceneBounds(scene: MvScene): { min: Vec3; max: Vec3; center: Vec3; radius: number } {
-  if (scene.bounds && scene.bounds.length >= 6) {
-    const min: Vec3 = [scene.bounds[0], scene.bounds[2], scene.bounds[4]];
-    const max: Vec3 = [scene.bounds[1], scene.bounds[3], scene.bounds[5]];
+function sceneBounds(scene: MvScene): {
+  min: Vec3;
+  max: Vec3;
+  center: Vec3;
+  radius: number;
+  hx: number;
+  hy: number;
+  hz: number;
+} {
+  const pack = (min: Vec3, max: Vec3) => {
     const center: Vec3 = [
       0.5 * (min[0] + max[0]),
       0.5 * (min[1] + max[1]),
       0.5 * (min[2] + max[2])
     ];
-    const radius =
-      0.5 *
-        Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) || 1;
-    return { min, max, center, radius };
+    const hx = 0.5 * (max[0] - min[0]);
+    const hy = 0.5 * (max[1] - min[1]);
+    const hz = 0.5 * (max[2] - min[2]);
+    const radius = Math.hypot(hx, hy, hz) || 1;
+    return { min, max, center, radius, hx, hy, hz };
+  };
+
+  if (scene.bounds && scene.bounds.length >= 6) {
+    return pack(
+      [scene.bounds[0], scene.bounds[2], scene.bounds[4]],
+      [scene.bounds[1], scene.bounds[3], scene.bounds[5]]
+    );
   }
 
   let min: Vec3 = [Infinity, Infinity, Infinity];
@@ -432,16 +577,58 @@ function sceneBounds(scene: MvScene): { min: Vec3; max: Vec3; center: Vec3; radi
   }
 
   if (!any) {
-    return { min: [-1, -1, -1], max: [1, 1, 1], center: [0, 0, 0], radius: 1 };
+    return pack([-1, -1, -1], [1, 1, 1]);
   }
-  const center: Vec3 = [
-    0.5 * (min[0] + max[0]),
-    0.5 * (min[1] + max[1]),
-    0.5 * (min[2] + max[2])
-  ];
-  const radius =
-    0.5 * Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) || 1;
-  return { min, max, center, radius };
+  return pack(min, max);
+}
+
+/** Local-space AABB centroid of object positions (morphoview render_object_centroid). */
+function objectLocalCentroid(obj: MvObject, dim: number): Vec3 {
+  const stride = formatStride(obj.format, dim);
+  const nVert = Math.floor(obj.vertices.length / stride);
+  if (nVert < 1) {
+    return [0, 0, 0];
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (let vi = 0; vi < nVert; vi++) {
+    const base = vi * stride;
+    const x = obj.vertices[base] || 0;
+    const y = dim > 1 ? obj.vertices[base + 1] || 0 : 0;
+    const z = dim > 2 ? obj.vertices[base + 2] || 0 : 0;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+    minZ = Math.min(minZ, z);
+    maxZ = Math.max(maxZ, z);
+  }
+  return [0.5 * (minX + maxX), 0.5 * (minY + maxY), 0.5 * (minZ + maxZ)];
+}
+
+/** View-space z of model*local (column-major); morphoview render_view_depth. */
+function viewDepth(view: Float32Array, model: Float32Array, local: Vec3): number {
+  const wx =
+    model[0] * local[0] + model[4] * local[1] + model[8] * local[2] + model[12];
+  const wy =
+    model[1] * local[0] + model[5] * local[1] + model[9] * local[2] + model[13];
+  const wz =
+    model[2] * local[0] + model[6] * local[1] + model[10] * local[2] + model[14];
+  return view[2] * wx + view[6] * wy + view[10] * wz + view[14];
+}
+
+function isTransparentDraw(draw: MvDraw, obj: MvObject | undefined): boolean {
+  if (draw.color && draw.color[3] < 0.999) {
+    return true;
+  }
+  if (obj && obj.format.includes('a')) {
+    return true;
+  }
+  return false;
 }
 
 export class MorphoviewGL {
@@ -455,8 +642,11 @@ export class MorphoviewGL {
   // Match morphoview's fitted home view: look along +Z at the scene center.
   private yaw = 0;
   private pitch = 0;
-  private distance = 3;
-  private homeDistance = 3;
+  /** Uniform view scale (morphoview display_fit / scroll zoom). */
+  private viewScale = 1;
+  private homeScale = 1;
+  private orthoNear = -2;
+  private orthoFar = 2;
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
@@ -552,8 +742,8 @@ export class MorphoviewGL {
           return;
         }
         e.preventDefault();
-        this.distance *= e.deltaY > 0 ? 1.1 : 0.9;
-        this.distance = Math.max(0.2, Math.min(100, this.distance));
+        this.viewScale *= e.deltaY > 0 ? 0.95 : 1.05;
+        this.viewScale = Math.max(1e-4, Math.min(1e4, this.viewScale));
         this.draw();
       },
       { passive: false }
@@ -576,18 +766,41 @@ export class MorphoviewGL {
   resetView(): void {
     this.yaw = 0;
     this.pitch = 0;
-    this.distance = this.homeDistance;
+    this.applyFit(/*assignViewScale=*/ true);
     this.draw();
   }
 
   setScene(scene: MvScene): void {
     this.scene = scene;
-    const b = sceneBounds(scene);
-    this.homeDistance = Math.max(2.2 * b.radius, 1);
-    this.distance = this.homeDistance;
     this.yaw = 0;
     this.pitch = 0;
+    this.applyFit(/*assignViewScale=*/ true);
     this.draw();
+  }
+
+  /**
+   * morphoview display_fit: scale so AABB fills the window with 10% margin;
+   * ortho near/far from scaled Z half-extent.
+   */
+  private applyFit(assignViewScale: boolean): void {
+    if (!this.scene) {
+      return;
+    }
+    const aspect =
+      this.canvas.width / Math.max(1, this.canvas.height) || 1;
+    const b = sceneBounds(this.scene);
+    const extent = Math.max(b.hx / aspect, b.hy);
+    const scale = extent > 1e-6 ? 1 / (extent * 1.1) : 1;
+    this.homeScale = scale;
+    if (assignViewScale) {
+      this.viewScale = scale;
+    }
+    let zspan = scale * b.hz + 1;
+    if (zspan < 2) {
+      zspan = 2;
+    }
+    this.orthoNear = -zspan;
+    this.orthoFar = zspan;
   }
 
   resize(width: number, height: number): void {
@@ -597,6 +810,11 @@ export class MorphoviewGL {
     this.canvas.style.width = `${width}px`;
     this.canvas.style.height = `${height}px`;
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    const atHome =
+      this.yaw === 0 &&
+      this.pitch === 0 &&
+      Math.abs(this.viewScale - this.homeScale) < 1e-9 * Math.max(1, this.homeScale);
+    this.applyFit(atHome);
     this.draw();
   }
 
@@ -673,7 +891,16 @@ export class MorphoviewGL {
     gl.useProgram(this.program);
   }
 
-  private drawDraw(draw: MvDraw, obj: MvObject, dim: number, mvpBase: Float32Array, eye: Vec3, light: Vec3, lightColor: Vec3): void {
+  private drawDraw(
+    draw: MvDraw,
+    obj: MvObject,
+    dim: number,
+    mvpBase: Float32Array,
+    eye: Vec3,
+    light: Vec3,
+    lightColor: Vec3,
+    transparentPass: boolean
+  ): void {
     const gl = this.gl;
     const batches: Array<{ mode: number; indices: number[] }> = [];
     if (obj.facets.length) {
@@ -687,7 +914,14 @@ export class MorphoviewGL {
     }
 
     for (const batch of batches) {
-      const mesh = expandObject(obj, dim, draw, batch.mode, batch.indices);
+      const mesh = expandObject(
+        obj,
+        dim,
+        draw,
+        batch.mode,
+        batch.indices,
+        batch.mode === gl.TRIANGLES
+      );
       if (!mesh) {
         continue;
       }
@@ -729,16 +963,27 @@ export class MorphoviewGL {
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
       // WebGL1 may lack OES_element_index_uint — fall back to Uint16 when possible
       const ext = gl.getExtension('OES_element_index_uint');
+      const indexType = ext ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
       if (ext) {
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STREAM_DRAW);
-        gl.drawElements(mesh.mode, mesh.indices.length, gl.UNSIGNED_INT, 0);
       } else {
         const shortIdx = new Uint16Array(mesh.indices.length);
         for (let i = 0; i < mesh.indices.length; i++) {
           shortIdx[i] = mesh.indices[i] & 0xffff;
         }
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, shortIdx, gl.STREAM_DRAW);
-        gl.drawElements(mesh.mode, shortIdx.length, gl.UNSIGNED_SHORT, 0);
+      }
+
+      // Closed translucent meshes: back faces then front (morphoview).
+      if (transparentPass && mesh.mode === gl.TRIANGLES) {
+        gl.enable(gl.CULL_FACE);
+        gl.cullFace(gl.FRONT);
+        gl.drawElements(mesh.mode, mesh.indices.length, indexType, 0);
+        gl.cullFace(gl.BACK);
+        gl.drawElements(mesh.mode, mesh.indices.length, indexType, 0);
+        gl.disable(gl.CULL_FACE);
+      } else {
+        gl.drawElements(mesh.mode, mesh.indices.length, indexType, 0);
       }
 
       gl.deleteBuffer(pb);
@@ -760,58 +1005,68 @@ export class MorphoviewGL {
 
     const b = sceneBounds(scene);
     const aspect = this.canvas.width / Math.max(1, this.canvas.height);
-    const proj = perspective(Math.PI / 4, aspect, 0.01, b.radius * 40 + 10);
-    const eyex =
-      b.center[0] + this.distance * Math.cos(this.pitch) * Math.sin(this.yaw);
-    const eyey = b.center[1] + this.distance * Math.sin(this.pitch);
-    const eyez =
-      b.center[2] + this.distance * Math.cos(this.pitch) * Math.cos(this.yaw);
-    const eye: Vec3 = [eyex, eyey, eyez];
-    const view = lookAt(eye, b.center, [0, 1, 0]);
+
+    // morphoview: ortho ±aspect / ±1, view = Rx Ry S T(-center)
+    const proj = ortho(-aspect, aspect, -1, 1, this.orthoNear, this.orthoFar);
+    let view = translateMat(-b.center[0], -b.center[1], -b.center[2]);
+    view = mulMat4(scaleMat(this.viewScale), view);
+    view = mulMat4(rotateYMat(this.yaw), view);
+    view = mulMat4(rotateXMat(this.pitch), view);
     const mvpBase = mulMat4(proj, view);
 
-    let light: Vec3 = scene.lightPos
+    const invView = invertMat4(view);
+    const eye: Vec3 = [invView[12], invView[13], invView[14]];
+
+    // morphoview AABB auto-light: center + (0.7, 1.0, 1.5) * radius
+    const light: Vec3 = scene.lightPos
       ? scene.lightPos
       : [
-          b.center[0] + b.radius * 1.5,
-          b.center[1] + b.radius * 2,
-          b.center[2] + b.radius * 1.5
+          b.center[0] + 0.7 * b.radius,
+          b.center[1] + 1.0 * b.radius,
+          b.center[2] + 1.5 * b.radius
         ];
     const lightColor = scene.lightColor;
+    const dim = scene.dim || 3;
 
-    // Opaque then transparent (rough)
     const opaque: MvDraw[] = [];
-    const transparent: MvDraw[] = [];
+    const transparent: Array<{ draw: MvDraw; depth: number }> = [];
     for (const d of scene.draws) {
-      const a = d.color ? d.color[3] : 1;
-      if (a < 0.999) {
-        transparent.push(d);
+      if (d.text) {
+        continue;
+      }
+      const obj = scene.objects.get(d.objectId);
+      if (isTransparentDraw(d, obj)) {
+        const local = obj ? objectLocalCentroid(obj, dim) : ([0, 0, 0] as Vec3);
+        transparent.push({
+          draw: d,
+          depth: viewDepth(view, d.matrix, local)
+        });
       } else {
         opaque.push(d);
       }
     }
+    // Far → near (ascending view-z), same as morphoview render_tdraw_cmp.
+    transparent.sort((a, b) => a.depth - b.depth);
 
-    // Opaque meshes, then transparent, then text on top.
+    gl.disable(gl.BLEND);
     gl.depthMask(true);
     for (const d of opaque) {
-      if (d.text) {
-        continue;
-      }
       const obj = scene.objects.get(d.objectId);
       if (obj) {
-        this.drawDraw(d, obj, scene.dim || 3, mvpBase, eye, light, lightColor);
+        this.drawDraw(d, obj, dim, mvpBase, eye, light, lightColor, false);
       }
     }
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
-    for (const d of transparent) {
-      if (d.text) {
-        continue;
-      }
+    for (const { draw: d } of transparent) {
       const obj = scene.objects.get(d.objectId);
       if (obj) {
-        this.drawDraw(d, obj, scene.dim || 3, mvpBase, eye, light, lightColor);
+        this.drawDraw(d, obj, dim, mvpBase, eye, light, lightColor, true);
       }
     }
+
     gl.depthMask(true);
     for (const d of scene.draws) {
       if (d.text) {
