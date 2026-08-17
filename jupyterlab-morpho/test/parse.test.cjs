@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { parseMorphoview, formatLayout, formatStride } = require('./dist/parse.js');
+const { identity, normalMatrix } = require('./dist/mat4.js');
 
 const fixture = fs.readFileSync(
   path.join(__dirname, 'fixtures', 'commandapi-example.mv'),
@@ -20,6 +21,7 @@ test('command API example parses one scene with a line draw', () => {
   assert.equal(scene.dim, 3);
   assert.equal(scene.title, 'Example');
   assert.deepEqual(scene.background, [0, 0, 0]);
+  assert.equal(scene.lighting, 'neutral');
   assert.equal(scene.objects.size, 1);
   const obj = scene.objects.get(1);
   assert.ok(obj);
@@ -108,4 +110,76 @@ d 1
   assert.equal(scene.draws.length, 1);
   assert.equal(scene.draws[0].text, 'hello');
   assert.equal(scene.draws[0].matrix[12], 1);
+});
+
+test('omit L defaults to Neutral', () => {
+  const ir = `
+S 0 3
+o 1
+v "x" 0 0 0
+p 0
+d 1
+`;
+  const scene = parseMorphoview(ir)[0];
+  assert.equal(scene.lighting, 'neutral');
+  assert.equal(scene.lights.length, 0);
+});
+
+test('L named rigs and explicit lamps', () => {
+  const auto = parseMorphoview('S 0 3\nL "auto"\no 1\nv "x" 0 0 0\np 0\nd 1\n')[0];
+  assert.equal(auto.lighting, 'neutral');
+  assert.equal(auto.lights.length, 0);
+
+  const three = parseMorphoview(
+    'S 0 3\nL "threepoint"\no 1\nv "x" 0 0 0\np 0\nd 1\n'
+  )[0];
+  assert.equal(three.lighting, 'threepoint');
+
+  const white = parseMorphoview(
+    'S 0 3\nL 1 "x" 1 2 3\no 1\nv "x" 0 0 0\np 0\nd 1\n'
+  )[0];
+  assert.equal(white.lighting, 'explicit');
+  assert.equal(white.lights.length, 1);
+  assert.deepEqual(white.lights[0].pos, [1, 2, 3]);
+  assert.deepEqual(white.lights[0].color, [1, 1, 1]);
+
+  const tinted = parseMorphoview(
+    'S 0 3\nL 1 "xc" -2.5 0.4 0.2  1.0 0.15 0.08\no 1\nv "x" 0 0 0\np 0\nd 1\n'
+  )[0];
+  assert.equal(tinted.lighting, 'explicit');
+  assert.deepEqual(tinted.lights[0].pos, [-2.5, 0.4, 0.2]);
+  assert.deepEqual(tinted.lights[0].color, [1, 0.15, 0.08]);
+
+  const ambient = parseMorphoview(
+    'S 0 3\nL 0\no 1\nv "x" 0 0 0\np 0\nd 1\n'
+  )[0];
+  assert.equal(ambient.lighting, 'explicit');
+  assert.equal(ambient.lights.length, 0);
+
+  const off = parseMorphoview(
+    'S 0 3\nL "off"\no 1\nv "x" 0 0 0\np 0\nd 1\n'
+  )[0];
+  assert.equal(off.lighting, 'explicit');
+  assert.equal(off.lights.length, 0);
+
+  const namedNeutral = parseMorphoview(
+    'S 0 3\nL "neutral"\no 1\nv "x" 0 0 0\np 0\nd 1\n'
+  )[0];
+  assert.equal(namedNeutral.lighting, 'neutral');
+});
+
+test('normalMatrix is inverse-transpose, not inverse', () => {
+  // Ry(90°): R^{-T} = R, while R^{-1} = R^T would flip the first column's z.
+  const m = identity();
+  m[0] = 0;
+  m[1] = 0;
+  m[2] = -1;
+  m[4] = 0;
+  m[5] = 1;
+  m[6] = 0;
+  m[8] = 1;
+  m[9] = 0;
+  m[10] = 0;
+  const n = Array.from(normalMatrix(m), x => x + 0);
+  assert.deepEqual(n, [0, 0, -1, 0, 1, 0, 1, 0, 0]);
 });

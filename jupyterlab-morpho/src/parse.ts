@@ -9,6 +9,17 @@ export type Vec3 = [number, number, number];
 export type Vec4 = [number, number, number, number];
 export type { Mat4 };
 
+/** Keep in sync with `SCENE_MAX_LIGHTS` in morphoview scene.h. */
+export const SCENE_MAX_LIGHTS = 4;
+
+/** Named camera-relative rigs, or an explicit world-space point list. */
+export type MvLightMode = 'neutral' | 'threepoint' | 'explicit';
+
+export interface MvLight {
+  pos: Vec3;
+  color: Vec3;
+}
+
 export interface MvObject {
   id: number;
   format: string;
@@ -47,9 +58,8 @@ export interface MvScene {
   dim: number;
   background: Vec3;
   bounds: number[] | null;
-  lightPos: Vec3 | null;
-  lightColor: Vec3;
-  lightAuto: boolean;
+  lighting: MvLightMode;
+  lights: MvLight[];
   objects: Map<number, MvObject>;
   draws: MvDraw[];
   fonts: Map<number, MvFont>;
@@ -211,6 +221,58 @@ class Reader {
   }
 }
 
+/** `L "neutral"|"threepoint"|"auto"|"off"` | `L <n> "x"|"xc" ...` | `L 0`. */
+function parseLightCommand(r: Reader, sc: MvScene): void {
+  const peek = r.peek();
+  if (peek?.startsWith('"')) {
+    const name = unquote(r.next());
+    if (name === 'threepoint') {
+      sc.lighting = 'threepoint';
+      sc.lights = [];
+    } else if (name === 'off') {
+      sc.lighting = 'explicit';
+      sc.lights = [];
+    } else {
+      sc.lighting = 'neutral';
+      sc.lights = [];
+    }
+    return;
+  }
+  if (!isNum(peek)) {
+    return;
+  }
+  const n = Math.trunc(num(r.next()));
+  if (n < 0) {
+    return;
+  }
+  const lights: MvLight[] = [];
+  if (n > 0) {
+    if (!r.peek()?.startsWith('"')) {
+      return;
+    }
+    const fmt = unquote(r.next());
+    const hasColor = fmt === 'xc';
+    if (!hasColor && fmt !== 'x') {
+      r.gatherNumbers();
+      return;
+    }
+    const stride = hasColor ? 6 : 3;
+    const vals = r.gatherNumbers();
+    const count = Math.min(n, SCENE_MAX_LIGHTS, Math.floor(vals.length / stride));
+    for (let i = 0; i < count; i++) {
+      const b = i * stride;
+      lights.push({
+        pos: [vals[b], vals[b + 1], vals[b + 2]],
+        color: hasColor
+          ? [vals[b + 3], vals[b + 4], vals[b + 5]]
+          : [1, 1, 1]
+      });
+    }
+  }
+  sc.lighting = 'explicit';
+  sc.lights = lights;
+}
+
 function ensureObject(scene: MvScene, id: number): MvObject {
   let o = scene.objects.get(id);
   if (!o) {
@@ -226,9 +288,8 @@ function emptyScene(id: number, dim = 3): MvScene {
     dim,
     background: [0.12, 0.12, 0.16],
     bounds: null,
-    lightPos: null,
-    lightColor: [1, 1, 1],
-    lightAuto: true,
+    lighting: 'neutral',
+    lights: [],
     objects: new Map(),
     draws: [],
     fonts: new Map(),
@@ -382,21 +443,7 @@ export function parseMorphoview(ascii: string): MvScene[] {
     }
 
     if (tok === 'L') {
-      const sc = ensureScene();
-      if (r.peek() === 'a') {
-        r.next();
-        sc.lightAuto = true;
-        sc.lightPos = null;
-      } else {
-        const vals = r.gatherNumbers();
-        if (vals.length >= 3) {
-          sc.lightPos = [vals[0], vals[1], vals[2]];
-          sc.lightAuto = false;
-          if (vals.length >= 6) {
-            sc.lightColor = [vals[3], vals[4], vals[5]];
-          }
-        }
-      }
+      parseLightCommand(r, ensureScene());
       continue;
     }
 

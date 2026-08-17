@@ -8,64 +8,129 @@ import {
   MvObject,
   Vec3,
   Vec4,
-  formatLayout
+  formatLayout,
+  SCENE_MAX_LIGHTS
 } from './parse';
 import { identity, mulMat4 } from './mat4';
+
+/* Geometry: OpenGL/VTK Phong when uFlat==0 (Lambert when ks=0); unlit albedo when uFlat!=0.
+ * Lighting and normals in view space; normalMatrix = inverseTranspose(view*model).
+ * Inverse-transpose is computed in the VS from uView*uModel — a separate mat3 uniform
+ * is identity on some WebGL1 implementations, which leaves N in object space while L
+ * stays in view space (highlight glued to the model). */
 
 const VS = `
 attribute vec3 aPosition;
 attribute vec3 aNormal;
 attribute vec4 aColor;
-uniform mat4 uMVP;
 uniform mat4 uModel;
-uniform mat3 uNormalMat;
+uniform mat4 uView;
+uniform mat4 uProj;
 varying vec3 vNormal;
 varying vec3 vPos;
 varying vec4 vColor;
 void main() {
-  vec4 wp = uModel * vec4(aPosition, 1.0);
-  vPos = wp.xyz;
-  vNormal = normalize(uNormalMat * aNormal);
+  mat4 vm = uView * uModel;
+  vec4 viewPos4 = vm * vec4(aPosition, 1.0);
+  gl_Position = uProj * viewPos4;
+  vPos = viewPos4.xyz;
+  float a00 = vm[0][0], a10 = vm[0][1], a20 = vm[0][2];
+  float a01 = vm[1][0], a11 = vm[1][1], a21 = vm[1][2];
+  float a02 = vm[2][0], a12 = vm[2][1], a22 = vm[2][2];
+  float det = a00 * (a11 * a22 - a12 * a21)
+            - a01 * (a10 * a22 - a12 * a20)
+            + a02 * (a10 * a21 - a11 * a20);
+  float id = abs(det) > 1e-8 ? 1.0 / det : 1.0;
+  mat3 nmat = mat3(
+    (a11 * a22 - a12 * a21) * id,
+    (a02 * a21 - a01 * a22) * id,
+    (a01 * a12 - a02 * a11) * id,
+    (a12 * a20 - a10 * a22) * id,
+    (a00 * a22 - a02 * a20) * id,
+    (a02 * a10 - a00 * a12) * id,
+    (a10 * a21 - a11 * a20) * id,
+    (a01 * a20 - a00 * a21) * id,
+    (a00 * a11 - a01 * a10) * id
+  );
+  vNormal = nmat * aNormal;
   vColor = aColor;
-  gl_Position = uMVP * vec4(aPosition, 1.0);
   gl_PointSize = 4.0;
 }
 `;
 
 const FS = `
 precision mediump float;
+precision mediump int;
+#define MAX_LIGHTS ${SCENE_MAX_LIGHTS}
 varying vec3 vNormal;
 varying vec3 vPos;
 varying vec4 vColor;
-uniform vec3 uLightPos;
-uniform vec3 uLightColor;
-uniform vec3 uEye;
+uniform int nLights;
+uniform vec4 lightPos[MAX_LIGHTS];
+uniform vec4 lightColor[MAX_LIGHTS];
+uniform vec3 ambientColor;
 uniform float uKa;
 uniform float uKd;
 uniform float uKs;
 uniform float uShininess;
-uniform bool uFlat;
+uniform int uFlat;
+
+vec3 shadeOne(vec3 norm, vec3 viewDir, vec4 lp, vec3 C) {
+  vec3 Lvec = (lp.w < 0.5) ? lp.xyz : (lp.xyz - vPos);
+  float llen = length(Lvec);
+  if (llen < 1e-8) {
+    return vec3(0.0);
+  }
+  vec3 lightDir = Lvec / llen;
+  float NdotL = max(dot(norm, lightDir), 0.0);
+  vec3 diffuse = uKd * NdotL * C;
+  vec3 reflectDir = reflect(-lightDir, norm);
+  float spec = pow(max(dot(viewDir, reflectDir), 0.0), max(uShininess, 1e-4));
+  vec3 specular = uKs * spec * C;
+  return diffuse + specular;
+}
+
 void main() {
   vec3 albedo = vColor.rgb;
   float alpha = vColor.a;
-  if (uFlat) {
+  if (uFlat != 0) {
     gl_FragColor = vec4(albedo, alpha);
     return;
   }
-  vec3 N = normalize(vNormal);
-  // morphoview: two-sided lighting (transparent back-face pass).
-  if (!gl_FrontFacing) {
-    N = -N;
-  }
-  vec3 L = normalize(uLightPos - vPos);
-  vec3 V = normalize(uEye - vPos);
-  vec3 R = reflect(-L, N);
-  float diff = max(dot(N, L), 0.0);
-  float spec = pow(max(dot(R, V), 0.0), uShininess);
-  vec3 color = (uKa + uKd * diff + uKs * spec) * uLightColor * albedo;
-  gl_FragColor = vec4(color, alpha);
+  vec3 norm = normalize(vNormal);
+  if (!gl_FrontFacing) norm = -norm;
+  vec3 viewDir = vec3(0.0, 0.0, 1.0);
+  vec3 lit = uKa * ambientColor;
+  if (nLights > 0) lit += shadeOne(norm, viewDir, lightPos[0], lightColor[0].rgb);
+  if (nLights > 1) lit += shadeOne(norm, viewDir, lightPos[1], lightColor[1].rgb);
+  if (nLights > 2) lit += shadeOne(norm, viewDir, lightPos[2], lightColor[2].rgb);
+  if (nLights > 3) lit += shadeOne(norm, viewDir, lightPos[3], lightColor[3].rgb);
+  gl_FragColor = vec4(lit * albedo, alpha);
 }
 `;
+
+/** Neutral / ThreePoint view-space dirs: keep in sync with morphoview render.c. */
+const NEUTRAL_DIR: Vec3[] = [
+  [1.5, -0.5, 1.5],
+  [1.5, 1.5, 1.5],
+  [-0.5, 1.5, 1.5]
+];
+const NEUTRAL_INTENSITY = 0.4;
+const NEUTRAL_COLOR: Vec3[] = [
+  [NEUTRAL_INTENSITY, NEUTRAL_INTENSITY, NEUTRAL_INTENSITY],
+  [NEUTRAL_INTENSITY, NEUTRAL_INTENSITY, NEUTRAL_INTENSITY],
+  [NEUTRAL_INTENSITY, NEUTRAL_INTENSITY, NEUTRAL_INTENSITY]
+];
+const THREEPOINT_DIR: Vec3[] = [
+  [0.5, 0.5, 1.5],
+  [-1.5, -2.5, 1.5],
+  [0.0, 1.5, -1.5]
+];
+const THREEPOINT_COLOR: Vec3[] = [
+  [0.85, 0.85, 0.85],
+  [0.4, 0.4, 0.4],
+  [0.1, 0.1, 0.1]
+];
 
 function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLShader {
   const sh = gl.createShader(type)!;
@@ -77,6 +142,15 @@ function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLSha
     throw new Error(log);
   }
   return sh;
+}
+
+/** WebGL1 array uniforms are addressed as `name[0]`; some browsers also accept `name`. */
+function uniformLoc(
+  gl: WebGLRenderingContext,
+  program: WebGLProgram,
+  name: string
+): WebGLUniformLocation | null {
+  return gl.getUniformLocation(program, name) ?? gl.getUniformLocation(program, `${name}[0]`);
 }
 
 function link(
@@ -155,76 +229,33 @@ function rotateYMat(angle: number): Float32Array {
   return out;
 }
 
-/** Affine inverse for view matrices (column-major). */
-function invertMat4(m: Float32Array): Float32Array {
-  const out = new Float32Array(16);
-  const n11 = m[0];
-  const n21 = m[1];
-  const n31 = m[2];
-  const n12 = m[4];
-  const n22 = m[5];
-  const n32 = m[6];
-  const n13 = m[8];
-  const n23 = m[9];
-  const n33 = m[10];
-  const t1 = m[12];
-  const t2 = m[13];
-  const t3 = m[14];
-  const det =
-    n11 * (n22 * n33 - n23 * n32) -
-    n21 * (n12 * n33 - n13 * n32) +
-    n31 * (n12 * n23 - n13 * n22);
-  const id = det ? 1 / det : 1;
-  out[0] = (n22 * n33 - n23 * n32) * id;
-  out[1] = (n23 * n31 - n21 * n33) * id;
-  out[2] = (n21 * n32 - n22 * n31) * id;
-  out[4] = (n13 * n32 - n12 * n33) * id;
-  out[5] = (n11 * n33 - n13 * n31) * id;
-  out[6] = (n12 * n31 - n11 * n32) * id;
-  out[8] = (n12 * n23 - n13 * n22) * id;
-  out[9] = (n13 * n21 - n11 * n23) * id;
-  out[10] = (n11 * n22 - n12 * n21) * id;
-  out[12] = -(out[0] * t1 + out[4] * t2 + out[8] * t3);
-  out[13] = -(out[1] * t1 + out[5] * t2 + out[9] * t3);
-  out[14] = -(out[2] * t1 + out[6] * t2 + out[10] * t3);
-  out[15] = 1;
-  return out;
-}
-
-function normalMatrix(model: Float32Array): Float32Array {
-  const a00 = model[0];
-  const a01 = model[1];
-  const a02 = model[2];
-  const a10 = model[4];
-  const a11 = model[5];
-  const a12 = model[6];
-  const a20 = model[8];
-  const a21 = model[9];
-  const a22 = model[10];
-  const det =
-    a00 * (a11 * a22 - a12 * a21) -
-    a01 * (a10 * a22 - a12 * a20) +
-    a02 * (a10 * a21 - a11 * a20);
-  const id = det ? 1 / det : 1;
-  return new Float32Array([
-    (a11 * a22 - a12 * a21) * id,
-    (a02 * a21 - a01 * a22) * id,
-    (a01 * a12 - a02 * a11) * id,
-    (a12 * a20 - a10 * a22) * id,
-    (a00 * a22 - a02 * a20) * id,
-    (a02 * a10 - a00 * a12) * id,
-    (a10 * a21 - a11 * a20) * id,
-    (a01 * a20 - a00 * a21) * id,
-    (a00 * a11 - a01 * a10) * id
-  ]);
-}
-
 function transformPoint(m: Float32Array, x: number, y: number, z: number): Vec3 {
   return [
     m[0] * x + m[4] * y + m[8] * z + m[12],
     m[1] * x + m[5] * y + m[9] * z + m[13],
     m[2] * x + m[6] * y + m[10] * z + m[14]
   ];
+}
+
+/** Copy a view-space directional rig (`w=0`) into the upload buffers. */
+function copyDirRig(
+  dir: Vec3[],
+  col: Vec3[],
+  n: number,
+  pos: Float32Array,
+  color: Float32Array
+): void {
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    pos[o] = dir[i][0];
+    pos[o + 1] = dir[i][1];
+    pos[o + 2] = dir[i][2];
+    pos[o + 3] = 0;
+    color[o] = col[i][0];
+    color[o + 1] = col[i][1];
+    color[o + 2] = col[i][2];
+    color[o + 3] = 0;
+  }
 }
 
 function readVec3(verts: number[], offset: number, dim: number, fallbackZ = 0): Vec3 {
@@ -633,12 +664,13 @@ export class MorphoviewGL {
     this.textProgram = link(gl, tvs, tfs);
     gl.useProgram(this.program);
     this.locs = {
-      uMVP: gl.getUniformLocation(this.program, 'uMVP'),
       uModel: gl.getUniformLocation(this.program, 'uModel'),
-      uNormalMat: gl.getUniformLocation(this.program, 'uNormalMat'),
-      uLightPos: gl.getUniformLocation(this.program, 'uLightPos'),
-      uLightColor: gl.getUniformLocation(this.program, 'uLightColor'),
-      uEye: gl.getUniformLocation(this.program, 'uEye'),
+      uView: gl.getUniformLocation(this.program, 'uView'),
+      uProj: gl.getUniformLocation(this.program, 'uProj'),
+      nLights: gl.getUniformLocation(this.program, 'nLights'),
+      lightPos: uniformLoc(gl, this.program, 'lightPos'),
+      lightColor: uniformLoc(gl, this.program, 'lightColor'),
+      ambientColor: gl.getUniformLocation(this.program, 'ambientColor'),
       uKa: gl.getUniformLocation(this.program, 'uKa'),
       uKd: gl.getUniformLocation(this.program, 'uKd'),
       uKs: gl.getUniformLocation(this.program, 'uKs'),
@@ -982,29 +1014,50 @@ export class MorphoviewGL {
     gl.useProgram(this.program);
   }
 
-  private drawDraw(
-    draw: MvDraw,
-    mvpBase: Float32Array,
-    eye: Vec3,
-    light: Vec3,
-    lightColor: Vec3,
-    transparentPass: boolean
-  ): void {
+  /** Upload nLights / lightPos / lightColor / ambientColor for this frame. */
+  private uploadLights(scene: MvScene, view: Float32Array): void {
+    const gl = this.gl;
+    const pos = new Float32Array(SCENE_MAX_LIGHTS * 4);
+    const color = new Float32Array(SCENE_MAX_LIGHTS * 4);
+    let n = 0;
+    if (scene.lighting === 'threepoint') {
+      n = 3;
+      copyDirRig(THREEPOINT_DIR, THREEPOINT_COLOR, n, pos, color);
+    } else if (scene.lighting === 'explicit') {
+      n = Math.min(scene.lights.length, SCENE_MAX_LIGHTS);
+      for (let i = 0; i < n; i++) {
+        const wp = scene.lights[i].pos;
+        const vp = transformPoint(view, wp[0], wp[1], wp[2]);
+        const o = i * 4;
+        pos[o] = vp[0];
+        pos[o + 1] = vp[1];
+        pos[o + 2] = vp[2];
+        pos[o + 3] = 1;
+        color[o] = scene.lights[i].color[0];
+        color[o + 1] = scene.lights[i].color[1];
+        color[o + 2] = scene.lights[i].color[2];
+      }
+    } else {
+      n = 3;
+      copyDirRig(NEUTRAL_DIR, NEUTRAL_COLOR, n, pos, color);
+    }
+    gl.uniform1i(this.locs.nLights, n);
+    gl.uniform4fv(this.locs.lightPos, pos);
+    gl.uniform4fv(this.locs.lightColor, color);
+    gl.uniform3fv(this.locs.ambientColor, [1, 1, 1]);
+  }
+
+  private drawDraw(draw: MvDraw, view: Float32Array, proj: Float32Array, transparentPass: boolean): void {
     const meshes = this.meshCache.get(draw.drawId);
     if (!meshes) {
       return;
     }
     const gl = this.gl;
     const model = draw.matrix;
-    const mvp = mulMat4(mvpBase, model);
-    const nmat = normalMatrix(model);
 
-    gl.uniformMatrix4fv(this.locs.uMVP, false, mvp);
+    gl.uniformMatrix4fv(this.locs.uView, false, view);
+    gl.uniformMatrix4fv(this.locs.uProj, false, proj);
     gl.uniformMatrix4fv(this.locs.uModel, false, model);
-    gl.uniformMatrix3fv(this.locs.uNormalMat, false, nmat);
-    gl.uniform3fv(this.locs.uLightPos, light);
-    gl.uniform3fv(this.locs.uLightColor, lightColor);
-    gl.uniform3fv(this.locs.uEye, eye);
     gl.uniform1f(this.locs.uKa, draw.ka);
     gl.uniform1f(this.locs.uKd, draw.kd);
     gl.uniform1f(this.locs.uKs, draw.ks);
@@ -1058,19 +1111,10 @@ export class MorphoviewGL {
     view = mulMat4(rotateYMat(this.yaw), view);
     view = mulMat4(rotateXMat(this.pitch), view);
     const mvpBase = mulMat4(proj, view);
-
-    const invView = invertMat4(view);
-    const eye: Vec3 = [invView[12], invView[13], invView[14]];
-
-    const light: Vec3 = scene.lightPos
-      ? scene.lightPos
-      : [
-          b.center[0] + 0.7 * b.radius,
-          b.center[1] + 1.0 * b.radius,
-          b.center[2] + 1.5 * b.radius
-        ];
-    const lightColor = scene.lightColor;
     const dim = scene.dim || 3;
+
+    gl.useProgram(this.program);
+    this.uploadLights(scene, view);
 
     const opaque: MvDraw[] = [];
     const transparent: Array<{ draw: MvDraw; depth: number }> = [];
@@ -1094,14 +1138,14 @@ export class MorphoviewGL {
     gl.disable(gl.BLEND);
     gl.depthMask(true);
     for (const d of opaque) {
-      this.drawDraw(d, mvpBase, eye, light, lightColor, false);
+      this.drawDraw(d, view, proj, false);
     }
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     for (const { draw: d } of transparent) {
-      this.drawDraw(d, mvpBase, eye, light, lightColor, true);
+      this.drawDraw(d, view, proj, true);
     }
 
     gl.depthMask(true);
