@@ -1,11 +1,11 @@
 [comment]: # (xeus-morpho notebook display help)
 [version]: # (0.6.4)
 
-# Jupyter display
+# Jupyter inline graphics
 [tagjupyter]: # (jupyter)
 [tagDisplay]: # (Display)
 
-Module `jupyter` (shipped with xeus-morpho) shows a `Graphics` or `Scene` inside Jupyter:
+The `jupyter` module enables a morpho `Graphics` or `Scene` to be displayed inline inside a Jupyter notebook:
 
     import xgraphics
     import xcolor
@@ -15,10 +15,7 @@ Module `jupyter` (shipped with xeus-morpho) shows a `Graphics` or `Scene` inside
     g.display(Sphere([0, 0, 0], 1, color=Red))
     Display(g)
 
-`Display(g)` serializes with `Show.write` from the morphoview package (`xshow`) and publishes Jupyter `display_data` (`application/vnd.morpho.morphoview`). It does **not** launch the desktop morphoview window — use `Show(g)` for that.
+This fully coexists with morphoview, so you can also view the graphics in that app:
 
-Requires:
-
-* the **xmorpho** kernel (registers the `JupyterDisplay` builtin)
-* morphoview package modules on the Morpho package path (`xshow`, `xgraphics`, …)
-* jupyterlab-morpho for the WebGL MIME renderer
+    import morphoview
+    Show(g) // or View(g)
