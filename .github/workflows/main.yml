@@ -37,17 +37,29 @@ jobs:
         with:
           environment-file: environment-dev.yml
           environment-name: xeus-morpho
-          create-args: >-
-            openblas
-            liblapacke
-            suitesparse
+
+      # Morpho's CMake looks for cs.h under /usr/include/suitesparse and
+      # Homebrew paths, not conda-forge. Match Morpho's own CI / README.
+      - name: Install Morpho numeric deps (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsuitesparse-dev liblapacke-dev
+
+      - name: Install Morpho numeric deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install suite-sparse
 
       - name: Build and install Morpho
         working-directory: morpho-src
         run: |
+          prefix="$CONDA_PREFIX"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            prefix="$(brew --prefix):$prefix"
+          fi
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
+            -DCMAKE_PREFIX_PATH="$prefix" \
             -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
             -DMORPHO_HELP_BASEDIR="$CONDA_PREFIX/share/morpho/help" \
             -DMORPHO_MODULE_BASEDIR="$CONDA_PREFIX/share/morpho/modules"
