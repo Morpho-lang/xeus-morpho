@@ -4,7 +4,7 @@ Morpho syntax highlighting and **morphoview WebGL MIME** rendering for **Jupyter
 
 Token tables in [`src/tokens.ts`](src/tokens.ts) are synced with Morpho's lexer and have
 no JupyterLab imports. The MIME renderer interprets `application/vnd.morpho.morphoview`
-(ASCII command IR from `Show.write` / `xjupyter.display`).
+(ASCII command IR from `Show.write` / `jupyter.Display`).
 
 ## Install (development)
 
@@ -17,7 +17,7 @@ jupyter labextension develop . --overwrite
 ```
 
 Fully restart JupyterLab and hard-refresh the browser. Open a notebook with the
-**morpho (xmorpho)** kernel. Cells highlight Morpho; `Display(g)` from `xjupyter`
+**morpho (xmorpho)** kernel. Cells highlight Morpho; `Display(g)` from `jupyter`
 renders interactive WebGL (drag to orbit, scroll to zoom).
 
 Parser tests (no Lab required):
@@ -44,11 +44,11 @@ jlpm test
 ```morpho
 import xgraphics
 import xcolor
-import xjupyter
+import jupyter
 
 var g = Graphics()
 g.display(Sphere([0,0,0], 1, color=Red))
 Display(g)
 ```
 
-Requires xeus-morpho (`JupyterDisplay` builtin + `share/modules/xjupyter.morpho` on the Morpho package path) and the morphoview package for `xgraphics` / `xshow`.
+Requires xeus-morpho (`JupyterDisplay` builtin + `share/modules/jupyter.morpho` on the Morpho package path — list this repository in `~/.morphopackages`) and the morphoview package for `xgraphics` / `xshow`.

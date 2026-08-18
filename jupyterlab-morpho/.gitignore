@@ -3,5 +3,8 @@ lib/
 tsconfig.tsbuildinfo
 *.tsbuildinfo
 jupyterlab_morpho/labextension/
+jupyterlab_morpho/__pycache__/
 .yarn/
 test/dist/
+dist/
+*.egg-info/

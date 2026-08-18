@@ -9,7 +9,7 @@
 """Protocol tests for the xmorpho Jupyter kernel via jupyter_kernel_test.
 
 Requires an installed ``xmorpho`` kernelspec (see README / CONTRIBUTING) and
-Morpho 0.6 available to that binary.
+Morpho 0.6.4+ available to that binary.
 """
 
 from __future__ import annotations
@@ -191,7 +191,7 @@ class XMorphoKernelTests(jupyter_kernel_test.KernelTests):
         # Reply before any assertions so a failed check cannot leave the kernel blocked.
         self.assertEqual(stdin_msg["header"]["msg_type"], "input_request")
         self.assertEqual(stdin_msg["parent_header"].get("msg_id"), msg_id)
-        # xeus currently sends ``pwd`` (bool); Jupyter schema expects ``password``.
+        # xeus 6 sends Jupyter's ``password`` field on input_request.
         content = stdin_msg["content"]
         self.assertIn("prompt", content)
         self.kc.input("hello from stdin")

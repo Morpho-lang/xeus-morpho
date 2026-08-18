@@ -1,4 +1,4 @@
-.. Copyright (c) 2023, Tim Atherton
+.. Copyright (c) 2023-2026, Tim Atherton
 
    Distributed under the terms of the MIT license.
 
@@ -10,7 +10,7 @@ Usage
 Launch JupyterLab (or Classic Notebook) and open a new notebook with the
 **morpho (xmorpho)** kernel.
 
-Installation is covered in the project README. Morpho 0.6 and a matching
+Installation is covered in :doc:`installation`. Morpho 0.6.4+ and a matching
 ``xmorpho`` kernelspec must be available in the environment.
 
 Code execution
@@ -76,14 +76,14 @@ In-notebook graphics (static ``Show`` path)
 -------------------------------------------
 
 With the morphoview package (for ``xgraphics`` / ``xshow``), xeus-morpho's
-``xjupyter`` module on the Morpho package path, and the jupyterlab-morpho MIME
+``jupyter`` module on the Morpho package path, and the jupyterlab-morpho MIME
 renderer:
 
 .. code-block:: morpho
 
     import xgraphics
     import xcolor
-    import xjupyter
+    import jupyter
 
     var g = Graphics()
     g.display(Sphere([0, 0, 0], 1, color=Red))
@@ -93,8 +93,9 @@ renderer:
 ``application/vnd.morpho.morphoview`` display data (WebGL in Lab). Desktop
 ``Show(g)`` still launches the native morphoview window.
 
-List this repository in ``~/.morphopackages`` (or install the shipped
-``share/modules``) so ``import xjupyter`` resolves.
+List this repository in ``~/.morphopackages`` (Morpho looks for
+``share/modules`` and ``share/help`` under each entry) so ``import jupyter``
+resolves. Installing xeus-morpho into the same prefix Morpho uses also works.
 
 Interactive stdin (``System.readline``) uses Jupyter's input prompt. Print
 output is streamed to stdout as it is produced, so prompts appear before the

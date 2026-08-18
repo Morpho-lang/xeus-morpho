@@ -316,14 +316,32 @@ namespace xeus_morpho
         return xeus::create_inspect_reply(true, data, nl::json::object());
     }
 
-    void interpreter::shutdown_request_impl()
+    nl::json interpreter::shutdown_request_impl(bool /*restart*/)
     {
+        return xeus::create_shutdown_reply(false);
+    }
+
+    nl::json interpreter::interrupt_request_impl()
+    {
+        // Morpho has no cancel API; morpho_run cannot be aborted from Jupyter.
+        return xeus::create_interrupt_reply();
     }
 
     nl::json interpreter::kernel_info_request_impl()
     {
+        const std::string banner =
+            " ___   ___\n"
+            "( @ \\Y/ @ )   morpho  " MORPHO_VERSIONSTRING "\n"
+            " \\__+|+__/\n"
+            "  {_/ \\_}\n";
+
+        nl::json help_links = nl::json::array();
+        help_links.push_back({
+            {"text", "Morpho documentation"},
+            {"url", "https://morpho-lang.readthedocs.io"}
+        });
+
         return xeus::create_info_reply(
-            xeus::get_protocol_version(),
             "xmorpho",
             XEUS_MORPHO_VERSION,
             "morpho",
@@ -331,11 +349,11 @@ namespace xeus_morpho
             "text/x-morpho",
             ".morpho",
             "text",
-            "morpho",
+            std::string("morpho"),
             "",
-            "xmorpho",
-            false,
-            nl::json::array());
+            banner,
+            help_links,
+            std::vector<std::string>());
     }
 
 }

@@ -5,7 +5,7 @@
  *
  *    import xgraphics
  *    import xcolor
- *    import xjupyter
+ *    import jupyter
  *
  *    var g = Graphics()
  *    g.display(Sphere([0, 0, 0], 1, color=Red))

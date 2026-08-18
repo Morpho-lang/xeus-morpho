@@ -1,6 +1,6 @@
-..  Copyright (c) 2023,    
+.. Copyright (c) 2023-2026, Tim Atherton
 
-   Distributed under the terms of the MIT license.  
+   Distributed under the terms of the MIT license.
 
    The full license is in the file LICENSE, distributed with this software.
 
@@ -11,8 +11,8 @@
 Introduction
 ------------
 
-``xeus-morpho`` is a Jupyter kernel for morpho based on the native implementation of the Jupyter protocol 
-xeus_.
+``xeus-morpho`` is a Jupyter kernel for `morpho <https://github.com/Morpho-lang/morpho>`_
+(0.6.4 or newer) based on the native Jupyter protocol implementation xeus_.
 
 Licensing
 ---------
@@ -26,6 +26,7 @@ The full license is in the file LICENSE, distributed with this software.
    :caption: USER GUIDE
    :maxdepth: 2
 
+   installation
    usage
 
 .. toctree::

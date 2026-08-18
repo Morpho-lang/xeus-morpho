@@ -5,49 +5,41 @@ Jupyter protocol [xeus](https://github.com/jupyter-xeus/xeus).
 
 ## Installation
 
-xeus-morpho is not packaged for conda/mamba yet; build it from source.
+xeus-morpho is not packaged for conda yet; build it from source.
 
 Use a [miniforge](https://github.com/conda-forge/miniforge) or
 [miniconda](https://conda.io/miniconda.html) environment. Full Anaconda
 installs often conflict on ZeroMQ.
 
-### Create an environment
+### Install dependencies
 
-Preferred (matches [`environment-dev.yml`](environment-dev.yml)):
-
-```bash
-mamba env create -f environment-dev.yml
-mamba activate xeus-morpho
-```
-
-Or create an empty env and install deps by hand (xeus 5.x / xeus-zmq 3.x):
+In the conda environment you use for Jupyter (often `base`), install the build
+stack from [`environment-dev.yml`](environment-dev.yml):
 
 ```bash
-mamba create -n xeus-morpho
-mamba activate xeus-morpho
-mamba install cmake cxx-compiler xeus "xeus-zmq>=3.1,<4" nlohmann_json cppzmq jupyterlab -c conda-forge
+conda env update -n "$CONDA_DEFAULT_ENV" -f environment-dev.yml
 ```
 
-You also need a **Morpho 0.6** install (`libmorpho` and headers). Current kernel
-features (stdin, help topics, markdown help) expect Morpho **0.6.4+** APIs.
-Set `MORPHO_ROOT` if CMake cannot find Morpho under the usual prefixes.
+(`mamba` / `micromamba` work the same way if you have them.) You also need a
+**Morpho 0.6.4+** install (`libmorpho` and headers). Set `MORPHO_ROOT` if CMake
+cannot find Morpho under the usual prefixes.
 
 ### Build and install the kernel
 
+From the repository root:
+
 ```bash
-mkdir build && cd build
-cmake .. \
+cmake -S . -B build \
+  -D CMAKE_BUILD_TYPE=Release \
   -D CMAKE_PREFIX_PATH=$CONDA_PREFIX \
   -D CMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
   -D CMAKE_INSTALL_LIBDIR=lib
-cmake --build . -j
-cmake --install .
+cmake --build build -j
+cmake --install build
 ```
 
-(`make && make install` works too if CMake generated Unix Makefiles.)
-
-Install puts `xmorpho` in `$PREFIX/bin` and a kernelspec in
-`$PREFIX/share/jupyter/kernels/xmorpho`. Jupyter must see that prefix: use the
+Install puts `xmorpho` in `$CONDA_PREFIX/bin` and a kernelspec in
+`$CONDA_PREFIX/share/jupyter/kernels/xmorpho`. Jupyter must see that prefix: use the
 same env’s `jupyter` / JupyterLab, or copy the kernelspec into your Jupyter
 data dir (for example `~/Library/Jupyter/kernels/xmorpho` on macOS).
 
@@ -55,8 +47,8 @@ On macOS, if you copy `xmorpho` / `libxeus-morpho*.dylib` by hand (instead of
 `cmake --install`), re-sign afterward or the kernel may exit with SIGKILL:
 
 ```bash
-codesign -s - -f $PREFIX/bin/xmorpho
-codesign -s - -f $PREFIX/lib/libxeus-morpho.0.1.0.dylib
+codesign -s - -f $CONDA_PREFIX/bin/xmorpho
+codesign -s - -f $CONDA_PREFIX/lib/libxeus-morpho*.dylib
 ```
 
 ### Syntax highlighting (JupyterLab 4)
@@ -76,26 +68,38 @@ Restart JupyterLab (hard-refresh the browser). See
 Token tables are kept extractable for a future shared Morpho syntax package.
 
 The same extension renders morphoview ASCII IR (`application/vnd.morpho.morphoview`)
-via WebGL when you `import xjupyter` and call `Display(g)`. The Morpho module lives in
-[`share/modules/xjupyter.morpho`](share/modules/xjupyter.morpho); add this repo to
-`~/.morphopackages` (or install) so Morpho can find it. You still need the morphoview
-package for `xgraphics` / `xshow`. See
+via WebGL when you `import jupyter` and call `Display(g)`. The Morpho module lives in
+[`share/modules/jupyter.morpho`](share/modules/jupyter.morpho); add this repository
+to `~/.morphopackages` (Morpho looks for `share/modules` and `share/help` under each
+entry) so Morpho can find it. You still need the morphoview package for `xgraphics`
+/ `xshow`. See
 [`notebooks/morphoview-display.ipynb`](notebooks/morphoview-display.ipynb).
+
+### Troubleshooting
+
+**Wrong `xmorpho` on PATH.** An older binary (for example `/usr/local/bin/xmorpho`)
+can shadow `$CONDA_PREFIX/bin/xmorpho`. Check `which xmorpho`,
+`jupyter kernelspec list`, and the `argv` in `kernel.json`.
+
+**Old `libxeus-morpho` in `/usr/local/lib`.** The install rpath prefers
+`$CONDA_PREFIX/lib`. Confirm with `otool -L` (macOS) or `ldd` that the kernel
+loads the conda-prefix library.
 
 ## Documentation
 
 - Kernel usage notes: [`docs/source/usage.rst`](docs/source/usage.rst)
+- Changelog: [`CHANGELOG.md`](CHANGELOG.md)
 - Morpho language docs: https://morpho-lang.readthedocs.io
 
 ## Dependencies
 
 `xeus-morpho` depends on
 
-- [xeus](https://github.com/jupyter-xeus/xeus) (>= 5.1, < 6)
-- [xeus-zmq](https://github.com/jupyter-xeus/xeus-zmq) (>= 3.1, < 4)
+- [xeus](https://github.com/jupyter-xeus/xeus) (>= 6.0, < 7)
+- [xeus-zmq](https://github.com/jupyter-xeus/xeus-zmq) (>= 4.0, < 5)
 - [nlohmann_json](https://github.com/nlohmann/json)
 - [cppzmq](https://github.com/zeromq/cppzmq)
-- [morpho](https://github.com/Morpho-lang/morpho) (0.6; 0.6.4+ recommended)
+- [morpho](https://github.com/Morpho-lang/morpho) (>= 0.6.4)
 
 ## Contributing
 

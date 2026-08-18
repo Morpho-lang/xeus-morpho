@@ -1,28 +1,42 @@
 # Build trees
 /build/
 /build-xcode/
-build/*
+compile_commands.json
+CMakeUserPresets.json
 
-# Local test venv
+# Local test venv / Jupyter
 .venv-test/
 .venv/
 .jupyter-test/
 **/__pycache__/
+*.py[cod]
 .pytest_cache/
+**/.pytest_cache/
 
-# Generated kernelspec
+# Generated kernelspec (CMake writes this in the build tree)
 share/jupyter/kernels/xmorpho/kernel.json
 
 # Editor / OS junk
-src/.vscode/settings.json
-**/.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Jupyter
 .ipynb_checkpoints/
+
+# Sphinx / Doxygen output
+docs/xml/
+docs/build/
+docs/source/_build/
 
 # jupyterlab-morpho frontend build artifacts
 jupyterlab-morpho/node_modules/
 jupyterlab-morpho/.yarn/
 jupyterlab-morpho/lib/
 jupyterlab-morpho/tsconfig.tsbuildinfo
+jupyterlab-morpho/*.tsbuildinfo
 jupyterlab-morpho/jupyterlab_morpho/labextension/
 jupyterlab-morpho/*.egg-info/
 jupyterlab-morpho/dist/

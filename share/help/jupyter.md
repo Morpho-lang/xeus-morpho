@@ -1,18 +1,18 @@
 [comment]: # (xeus-morpho notebook display help)
-[version]: # (0.6)
+[version]: # (0.6.4)
 
 # Jupyter display
-[tagxjupyter]: # (xjupyter)
+[tagjupyter]: # (jupyter)
 [tagDisplay]: # (Display)
 
-Module `xjupyter` (shipped with xeus-morpho) shows a `Graphics` or `Scene` inside Jupyter:
+Module `jupyter` (shipped with xeus-morpho) shows a `Graphics` or `Scene` inside Jupyter:
 
     import xgraphics
     import xcolor
-    import xjupyter
+    import jupyter
 
     var g = Graphics()
-    g.display(Sphere([0,0,0], 1, color=Red))
+    g.display(Sphere([0, 0, 0], 1, color=Red))
     Display(g)
 
 `Display(g)` serializes with `Show.write` from the morphoview package (`xshow`) and publishes Jupyter `display_data` (`application/vnd.morpho.morphoview`). It does **not** launch the desktop morphoview window — use `Show(g)` for that.

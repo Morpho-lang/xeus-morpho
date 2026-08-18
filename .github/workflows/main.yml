@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - morpho6
+  pull_request:
+    branches:
+      - main
+      - morpho6
+
+defaults:
+  run:
+    shell: bash -l {0}
+
+jobs:
+  unix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout Morpho 0.6.4
+        uses: actions/checkout@v4
+        with:
+          repository: Morpho-lang/morpho
+          ref: v0.6.4
+          path: morpho-src
+
+      - name: Install micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment-dev.yml
+          environment-name: xeus-morpho
+
+      - name: Build and install Morpho
+        working-directory: morpho-src
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
+            -DMORPHO_BUILD_LINALG=OFF \
+            -DMORPHO_BUILD_SPARSE=OFF \
+            -DMORPHO_BUILD_GEOMETRY=OFF
+          cmake --build build -j
+          cmake --install build
+
+      - name: Build and install xeus-morpho
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
+            -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
+            -DCMAKE_INSTALL_LIBDIR=lib
+          cmake --build build -j
+          cmake --install build
+
+      - name: Test kernel
+        working-directory: test
+        run: pytest . -vv
+
+  labextension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: environment-dev.yml
+          environment-name: xeus-morpho
+          create-args: >-
+            nodejs
+            jupyterlab>=4,<5
+
+      - name: Test jupyterlab-morpho parser
+        working-directory: jupyterlab-morpho
+        run: |
+          jlpm install
+          jlpm test

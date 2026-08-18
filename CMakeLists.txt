@@ -6,7 +6,7 @@
 #The full license is in the file LICENSE, distributed with this software. 
 #############################################################################
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 project(xeus-morpho)
 
 set(XEUS_MORPHO_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -45,15 +45,6 @@ message(STATUS "Found morpho.h at ${MORPHO_HEADER}")
 get_filename_component(MORPHO_INCLUDE ${MORPHO_HEADER} DIRECTORY)
 message(STATUS "Including Morpho directory ${MORPHO_INCLUDE}")
 
-# Morpho headers in subfolders (if present)
-file(GLOB morpho_subdirectories LIST_DIRECTORIES true ${MORPHO_INCLUDE}/*)
-foreach(dir ${morpho_subdirectories})
-    if (IS_DIRECTORY ${dir})
-        list(APPEND MORPHO_INCLUDE_SUBDIRS ${dir})
-        message(STATUS "Including Morpho subdirectory ${dir}")
-    endif ()
-endforeach()
-
 find_library(MORPHO_LIBRARY
     NAMES morpho libmorpho
     HINTS
@@ -74,6 +65,38 @@ if (NOT MORPHO_LIBRARY)
 endif ()
 
 message(STATUS "Found Morpho library: ${MORPHO_LIBRARY}")
+
+# Require Morpho 0.6.4+ (help/stdin APIs live in the library from that release).
+set(MORPHO_BUILD_H "${MORPHO_INCLUDE}/build.h")
+if (NOT EXISTS "${MORPHO_BUILD_H}")
+    message(FATAL_ERROR
+        "Found morpho.h but not build.h next to it (${MORPHO_BUILD_H}). "
+        "xeus-morpho requires Morpho 0.6.4 or newer.")
+endif ()
+file(STRINGS "${MORPHO_BUILD_H}" _morpho_ver_lines
+     REGEX "^#define MORPHO_VERSION_(MAJOR|MINOR|PATCH) ")
+foreach (_line ${_morpho_ver_lines})
+    if (_line MATCHES "#define MORPHO_VERSION_MAJOR +([0-9]+)")
+        set(MORPHO_VERSION_MAJOR "${CMAKE_MATCH_1}")
+    elseif (_line MATCHES "#define MORPHO_VERSION_MINOR +([0-9]+)")
+        set(MORPHO_VERSION_MINOR "${CMAKE_MATCH_1}")
+    elseif (_line MATCHES "#define MORPHO_VERSION_PATCH +([0-9]+)")
+        set(MORPHO_VERSION_PATCH "${CMAKE_MATCH_1}")
+    endif ()
+endforeach ()
+if (NOT DEFINED MORPHO_VERSION_MAJOR OR NOT DEFINED MORPHO_VERSION_MINOR OR NOT DEFINED MORPHO_VERSION_PATCH)
+    message(FATAL_ERROR
+        "Could not parse Morpho version from ${MORPHO_BUILD_H}. "
+        "xeus-morpho requires Morpho 0.6.4 or newer.")
+endif ()
+math(EXPR MORPHO_VERSION_PACKED
+    "${MORPHO_VERSION_MAJOR} * 10000 + ${MORPHO_VERSION_MINOR} * 100 + ${MORPHO_VERSION_PATCH}")
+if (MORPHO_VERSION_PACKED LESS 604)
+    message(FATAL_ERROR
+        "Morpho ${MORPHO_VERSION_MAJOR}.${MORPHO_VERSION_MINOR}.${MORPHO_VERSION_PATCH} is too old. "
+        "xeus-morpho requires Morpho 0.6.4 or newer.")
+endif ()
+message(STATUS "Found Morpho ${MORPHO_VERSION_MAJOR}.${MORPHO_VERSION_MINOR}.${MORPHO_VERSION_PATCH}")
 
 #-------------------------------------------------------------------------------
 # Versioning
@@ -100,28 +123,36 @@ if (NOT DEFINED XEUS_MORPHO_KERNELSPEC_PATH)
     set(XEUS_MORPHO_KERNELSPEC_PATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/")
 endif ()
 
-configure_file (
+set(XEUS_MORPHO_KERNELSPEC_BUILD_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/share/jupyter/kernels/xmorpho")
+file(MAKE_DIRECTORY "${XEUS_MORPHO_KERNELSPEC_BUILD_DIR}")
+configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/share/jupyter/kernels/xmorpho/kernel.json.in"
-    "${CMAKE_CURRENT_SOURCE_DIR}/share/jupyter/kernels/xmorpho/kernel.json"
+    "${XEUS_MORPHO_KERNELSPEC_BUILD_DIR}/kernel.json"
+    @ONLY
+)
+file(COPY
+    "${CMAKE_CURRENT_SOURCE_DIR}/share/jupyter/kernels/xmorpho/logo-svg.svg"
+    DESTINATION "${XEUS_MORPHO_KERNELSPEC_BUILD_DIR}"
 )
 
 #-------------------------------------------------------------------------------
 # Build options
 #-------------------------------------------------------------------------------
 
-option(XEUS_MORPHO_BUILD_STATIC "Build xeus-morpho static library" ON)
-OPTION(XEUS_MORPHO_BUILD_SHARED "Split xmorpho build into executable and library" ON)
-OPTION(XEUS_MORPHO_BUILD_EXECUTABLE "Build the xmorpho executable" ON)
+option(XEUS_MORPHO_BUILD_STATIC "Build xeus-morpho static library" OFF)
+option(XEUS_MORPHO_BUILD_SHARED "Split xmorpho build into executable and library" ON)
+option(XEUS_MORPHO_BUILD_EXECUTABLE "Build the xmorpho executable" ON)
 
-OPTION(XEUS_MORPHO_USE_SHARED_XEUS "Link xmorpho  with the xeus shared library (instead of the static library)" ON)
-OPTION(XEUS_MORPHO_USE_SHARED_XEUS_MORPHO "Link xmorpho  with the xeus shared library (instead of the static library)" ON)
+option(XEUS_MORPHO_USE_SHARED_XEUS "Link xmorpho with the xeus shared library (instead of the static library)" ON)
+option(XEUS_MORPHO_USE_SHARED_XEUS_MORPHO "Link xmorpho with the xeus-morpho shared library (instead of the static library)" ON)
 
 #-------------------------------------------------------------------------------
 # Dependencies
 #-------------------------------------------------------------------------------
 
-set(xeus_REQUIRED_VERSION 5.1.0)
-set(xeus-zmq_REQUIRED_VERSION 3.1.0)
+set(xeus_REQUIRED_VERSION 6.0.0)
+set(xeus-zmq_REQUIRED_VERSION 4.0.0)
 
 if (NOT TARGET xeus AND NOT TARGET xeus-static)
     find_package(xeus ${xeus_REQUIRED_VERSION} REQUIRED)
@@ -168,7 +199,15 @@ set(XEUS_MORPHO_MAIN_SRC
 
 string(TOUPPER "${CMAKE_BUILD_TYPE}" U_CMAKE_BUILD_TYPE)
 
-set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib; ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+get_filename_component(MORPHO_LIBDIR "${MORPHO_LIBRARY}" DIRECTORY)
+set(XEUS_MORPHO_RPATH "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+if (NOT MORPHO_LIBDIR STREQUAL "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}"
+    AND NOT MORPHO_LIBDIR STREQUAL "${CMAKE_INSTALL_PREFIX}/lib")
+    list(APPEND XEUS_MORPHO_RPATH "${MORPHO_LIBDIR}")
+endif ()
+# Prefix first so a leftover /usr/local/lib/libxeus-morpho is not preferred over the install.
+set(CMAKE_INSTALL_RPATH "${XEUS_MORPHO_RPATH}")
+set(CMAKE_BUILD_RPATH "${XEUS_MORPHO_RPATH}")
 
 macro(xeus_morpho_set_common_options target_name)
     if (MSVC)
@@ -188,16 +227,19 @@ macro(xeus_morpho_set_common_options target_name)
     if (APPLE)
         set_target_properties(${target_name} PROPERTIES
             MACOSX_RPATH ON
+            BUILD_WITH_INSTALL_RPATH TRUE
         )
     else ()
         set_target_properties(${target_name} PROPERTIES
-            BUILD_WITH_INSTALL_RPATH 1
+            BUILD_WITH_INSTALL_RPATH TRUE
             SKIP_BUILD_RPATH FALSE
         )
     endif ()
 
     set_target_properties(${target_name} PROPERTIES
-        INSTALL_RPATH_USE_LINK_PATH TRUE
+        INSTALL_RPATH "${XEUS_MORPHO_RPATH}"
+        BUILD_RPATH "${XEUS_MORPHO_RPATH}"
+        INSTALL_RPATH_USE_LINK_PATH FALSE
     )
 endmacro()
 
@@ -239,7 +281,6 @@ macro(xeus_morpho_create_target target_name linkage output_name)
                                PUBLIC
                                $<BUILD_INTERFACE:${XEUS_MORPHO_INCLUDE_DIR}>
                                ${MORPHO_INCLUDE}
-                               ${MORPHO_INCLUDE_SUBDIRS}
                                $<INSTALL_INTERFACE:include>)
 
     if (XEUS_MORPHO_USE_SHARED_XEUS)
@@ -323,14 +364,12 @@ if (XEUS_MORPHO_BUILD_EXECUTABLE)
     # Configuration and data directories for jupyter and xeus-morpho
     set(XJUPYTER_DATA_DIR "share/jupyter"    CACHE STRING "Jupyter data directory")
 
-    # Install xmorpho Jupyter kernelspec
-    set(KERNELSPEC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/share/jupyter/kernels)
-    install(DIRECTORY ${KERNELSPEC_DIR}
-            DESTINATION ${XJUPYTER_DATA_DIR}
-            PATTERN "*.in" EXCLUDE)
+    # Install xmorpho Jupyter kernelspec (generated in the build tree)
+    install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/share/jupyter/kernels
+            DESTINATION ${XJUPYTER_DATA_DIR})
 
 
-    # Install Morpho modules / help shipped with xeus-morpho (xjupyter, etc.)
+    # Install Morpho modules / help shipped with xeus-morpho (jupyter, etc.)
     # Discoverable when this repo is listed in ~/.morphopackages, and also
     # when installed under the Morpho share tree.
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/share/modules
@@ -342,9 +381,8 @@ if (XEUS_MORPHO_BUILD_EXECUTABLE)
 
     # Extra path for installing Jupyter kernelspec
     if (XEXTRA_JUPYTER_DATA_DIR)
-        install(DIRECTORY ${KERNELSPEC_DIR}
-                DESTINATION ${XEXTRA_JUPYTER_DATA_DIR}
-                PATTERN "*.in" EXCLUDE)
+        install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/share/jupyter/kernels
+                DESTINATION ${XEXTRA_JUPYTER_DATA_DIR})
     endif ()
 endif ()
 

@@ -34,6 +34,7 @@ export const KEYWORDS: readonly string[] = [
 
 /** Literal / special identifiers. */
 export const LITERALS: readonly string[] = [
+  'im',
   'false',
   'nil',
   'self',
