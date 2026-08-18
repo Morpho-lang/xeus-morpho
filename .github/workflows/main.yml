@@ -37,16 +37,20 @@ jobs:
         with:
           environment-file: environment-dev.yml
           environment-name: xeus-morpho
+          create-args: >-
+            openblas
+            liblapacke
+            suitesparse
 
       - name: Build and install Morpho
         working-directory: morpho-src
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
             -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
-            -DMORPHO_BUILD_LINALG=OFF \
-            -DMORPHO_BUILD_SPARSE=OFF \
-            -DMORPHO_BUILD_GEOMETRY=OFF
+            -DMORPHO_HELP_BASEDIR="$CONDA_PREFIX/share/morpho/help" \
+            -DMORPHO_MODULE_BASEDIR="$CONDA_PREFIX/share/morpho/modules"
           cmake --build build -j
           cmake --install build
 
