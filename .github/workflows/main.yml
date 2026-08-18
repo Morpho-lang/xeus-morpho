@@ -19,10 +19,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Checkout Morpho 0.6.4
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: Morpho-lang/morpho
           ref: v0.6.4
@@ -33,7 +33,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsuitesparse-dev liblapacke-dev libunistring-dev
+          sudo apt-get install -y g++ libsuitesparse-dev liblapacke-dev libunistring-dev
 
       - name: Install Morpho dependencies (macOS)
         if: runner.os == 'macOS'
@@ -53,7 +53,7 @@ jobs:
           fi
 
       - name: Install micromamba
-        uses: mamba-org/setup-micromamba@v2
+        uses: mamba-org/setup-micromamba@v3
         with:
           environment-file: environment-dev.yml
           environment-name: xeus-morpho
@@ -61,8 +61,17 @@ jobs:
       - name: Build and install xeus-morpho
         shell: bash -l {0}
         run: |
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            cc=/usr/bin/gcc
+            cxx=/usr/bin/g++
+          else
+            cc=/usr/bin/clang
+            cxx=/usr/bin/clang++
+          fi
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER="$cc" \
+            -DCMAKE_CXX_COMPILER="$cxx" \
             -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
             -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
             -DCMAKE_INSTALL_LIBDIR=lib
@@ -77,10 +86,10 @@ jobs:
   labextension:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install micromamba
-        uses: mamba-org/setup-micromamba@v2
+        uses: mamba-org/setup-micromamba@v3
         with:
           environment-file: environment-dev.yml
           environment-name: xeus-morpho
