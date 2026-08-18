@@ -10,10 +10,6 @@ on:
       - main
       - morpho6
 
-defaults:
-  run:
-    shell: bash -l {0}
-
 jobs:
   unix:
     runs-on: ${{ matrix.os }}
@@ -32,41 +28,38 @@ jobs:
           ref: v0.6.4
           path: morpho-src
 
+      # Same numeric stack as Morpho / morpho-cli / morpho-zeromq CI.
+      - name: Install Morpho dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsuitesparse-dev liblapacke-dev libunistring-dev
+
+      - name: Install Morpho dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install suite-sparse
+
+      # System compiler into /usr/local, like the other Morpho packages.
+      # Do this before micromamba so CMake is not the conda toolchain.
+      - name: Build and install Morpho
+        working-directory: morpho-src
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+          sudo cmake --install build --config Release
+          sudo mkdir -p /usr/local/lib/morpho
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            sudo ldconfig
+          fi
+
       - name: Install micromamba
         uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: environment-dev.yml
           environment-name: xeus-morpho
 
-      # Morpho's CMake looks for cs.h under /usr/include/suitesparse and
-      # Homebrew paths, not conda-forge. Match Morpho's own CI / README.
-      - name: Install Morpho numeric deps (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsuitesparse-dev liblapacke-dev
-
-      - name: Install Morpho numeric deps (macOS)
-        if: runner.os == 'macOS'
-        run: brew install suite-sparse
-
-      - name: Build and install Morpho
-        working-directory: morpho-src
-        run: |
-          prefix="$CONDA_PREFIX"
-          if [[ "${{ runner.os }}" == "macOS" ]]; then
-            prefix="$(brew --prefix):$prefix"
-          fi
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$prefix" \
-            -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
-            -DMORPHO_HELP_BASEDIR="$CONDA_PREFIX/share/morpho/help" \
-            -DMORPHO_MODULE_BASEDIR="$CONDA_PREFIX/share/morpho/modules"
-          cmake --build build -j
-          cmake --install build
-
       - name: Build and install xeus-morpho
+        shell: bash -l {0}
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -77,6 +70,7 @@ jobs:
           cmake --install build
 
       - name: Test kernel
+        shell: bash -l {0}
         working-directory: test
         run: pytest . -vv
 
@@ -95,6 +89,7 @@ jobs:
             jupyterlab>=4,<5
 
       - name: Test jupyterlab-morpho parser
+        shell: bash -l {0}
         working-directory: jupyterlab-morpho
         run: |
           jlpm install
